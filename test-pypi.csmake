@@ -1,0 +1,86 @@
+# <copyright>
+# (c) Copyright 2017 Hewlett Packard Enterprise Development LP
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
+# Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# </copyright>
+
+[~~phases~~]
+build=Test the facade
+clean=Clean the facade test results
+
+**default=build
+
+[environment@default-env]
+PYPI_FACADE_PORT=29891
+DEFAULT_PYPI_ARCHIVE=release/2014-12-08T99:99:09
+DEFAULT_PYPI_MIRROR=http://pypi.gozer.hpcloud.net/openstack
+CHROOT=%(RESULTS)s/pypitest/fakechroot
+CACHE=%(RESULTS)s/pypitest/cache
+
+
+[&PypiFacade@activated-facade-first]
+default-context=cloudsystem
+interfaces=localhost
+sslport=%(PYPI_FACADE_PORT)s
+constraining-indicies=
+    %(DEFAULT_PYPI_MIRROR)s/%(DEFAULT_PYPI_ARCHIVE)s
+cache=%(CACHE)s
+chroot=%(CHROOT)s
+reset=pip
+constraints=
+   pip==6.1.1
+
+[&PypiFacade@activated-facade-other]
+default-context=cloudsystem
+interfaces=localhost
+sslport=%(PYPI_FACADE_PORT)s
+indicies=
+    %(DEFAULT_PYPI_MIRROR)s/%(DEFAULT_PYPI_ARCHIVE)s
+chroot=%(CHROOT)s
+cache=%(CACHE)s
+reset=pip
+constraints=
+   pip==6.1.1
+
+[&PypiFacade@activated-facade]
+default-context=cloudsystem
+interfaces=localhost
+sslport=%(PYPI_FACADE_PORT)s
+#constraining-indicies=
+indicies=
+    %(DEFAULT_PYPI_MIRROR)s/%(DEFAULT_PYPI_ARCHIVE)s/Ubuntu-12.04
+    %(DEFAULT_PYPI_MIRROR)s/%(DEFAULT_PYPI_ARCHIVE)s
+cache=%(CACHE)s
+reset=pip
+constraints=
+   pip==6.1.1
+
+
+[Shell@trywgets]
+command=set -eux
+    pip2pi ./pypi --allow-all-external --normalize-package-names --allow-unverified requests --allow-unverified retrying --allow-unverified pytz -r requirements.txt
+
+[subcommand@activated-facade]
+0000=trywgets
+
+[Shell@setup]
+command=set -x
+    mkdir -p %(CHROOT)s/etc/ssl/certs
+    cp %(WORKING)s/CsmakeProviders/tests/CsmakeProviders/ca-certificates.crt %(CHROOT)s/etc/ssl/certs
+command-clean=set -x
+    rm -rf %(RESULTS)s/pypitest
+
+[command@default]
+0000=default-env, setup
+0100=activated-facade

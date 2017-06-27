@@ -1,0 +1,97 @@
+# <copyright>
+# (c) Copyright 2017 Hewlett Packard Enterprise Development LP
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
+# Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# </copyright>
+
+[~~phases~~]
+clean=Remove all build results and generated files
+sources=Get the source files for the package
+package=Create an installable package
+**sequences=
+    clean->sources->package: Full clean build
+**default= clean->sources->package
+
+[metadata@python-packaging]
+name=python-packaging
+version=15.3.0
+description=Implements semantics for PEP 440 versioning definition
+about=This is the canonical pypa python version semantics library
+packager=HP CloudSystem Nebula Team  <hpcloud-nebulateam@hp.com>
+manufacturer=Hewlett-Packard Enterprose
+keywords=cloudsystem build dependency 
+copyrights=python-packaging-copyright
+classifiers=
+    Topic :: Software Development :: Libraries :: Python Modules
+    Development Status :: 5 - Production/Stable
+    Intended Audience :: Developers
+    License :: OSI Approved :: Apache Software License
+    Programming Language :: Python :: 2
+    Programming Language :: Python :: 2.6
+    Programming Language :: Python :: 2.7
+
+[copyright@python-packaging-copyright]
+license=Apache
+holder=Donald Stufft
+years=2014
+
+#Technically, the debian-directory-copyright is HP's here
+[DebianPackage@debian-python-packaging]
+package-version=1.0
+maps=python-packaging-installs
+result=%(RESULTS)s/debpackage
+debian-directory-copyright=python-packaging-copyright
+
+
+#Virtual box source to get include files to build against
+[environment@get-python-packaging-source-env]
+
+INET_LOCATION=https://pypi.python.org/packages/source/p/packaging
+PACKAGE=packaging-15.3
+PACKAGE_TARBALL=%(PACKAGE)s.tar.gz
+
+[versioning@hp-brew]
+designation=private
+format=hp-cs
+
+[Shell@get-python-packaging-source]
+**yields-files=<python-packaging (python:library)> %(PACKAGE)s/packaging
+command(sources)=set -xeu
+  pushd %(RESULTS)s
+      wget %(INET_LOCATION)s/%(PACKAGE_TARBALL)s
+      tar -xzvf %(PACKAGE_TARBALL)s
+  popd
+command-clean=rm -rf %(RESULTS)s/%(PACKAGE)s
+
+[installmap@python-packaging-installs]
+path_root=INSTALL_ROOT
+path_python-lib=PYTHON
+owner_root=root
+group_root=root
+
+map_bin=
+   map: <python-packaging> -(1-1)-> {PYTHON}/{~~file~~}}
+   copyright: python-packaging-copyright
+   owner:{root} 
+   group:{root}
+   permissions: 644
+
+[subcommand@common-build-steps]
+description=Prepare/build files for packaging
+0000=hp-brew, get-python-packaging-source-env, get-python-packaging-source
+
+[command@]
+description=Create and package a csmake release
+00=python-packaging, common-build-steps, debian-python-packaging
+

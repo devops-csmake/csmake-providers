@@ -1,0 +1,680 @@
+# <copyright>
+# (c) Copyright 2017 Hewlett Packard Enterprise Development LP
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
+# Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# </copyright>
+
+[~~phases~~]
+package=Create the installation package(s) for csmake-providers
+clean=Clean all made results
+test=Test the providers
+sources=Test pulling in the sources for doing functional tests
+tag=Test the tagging capabilities
+**sequences=
+    clean->package: Complete clean and build
+    clean->test: Test and ensure testing starts clean
+    clean->test->clean: Ensure testing runs clean and cleans up
+    clean->test->clean->package: Ensure testing runs clean and cleans up and build providers packaging
+    clean->test->tag->sources->clean->package: Run unit and functional testing and build the deb package
+**default= clean->test->tag->sources->clean->package
+**requires= csmake-swak, csmake (>= 1.5.17)
+
+[metadata@csmake-providers]
+name=csmake-providers
+version=1.3.32
+description=modules to support using various remote sources with builds
+about=Git, tar, etc is used in a lot of ways in tripleo, for example this
+ package is intended to support usage of git, svn, swift, scp, etc.
+packager=HPE CloudSystem RIDE Team  <hpcloud-cs-ride@hpe.com>
+manufacturer=Hewlett Packard Enterprise
+depends=python (>= 2.7), csmake (>= 1.5.17), python-git, python-swiftclient, python-packaging, python-yaml, python-pyinotify
+keywords=make build git openstack swift pypi pip fauxservice development
+copyrights=csmake-copyright
+classifiers=
+    Development Status :: 4 - Beta
+    Intended Audience :: Developers
+    Topic :: Software Development :: Build Tools
+    Programming Language :: Python :: 2
+    Programming Language :: Python :: 2.6
+    Programming Language :: Python :: 2.7
+    License :: Other/Proprietary License
+**files=
+    <CsmakeModules (python:csmake-modules)> CsmakeModules/*.py
+    <CsmakeProviders (pythons:library)> CsmakeProviders/*.py
+
+[copyright@csmake-copyright]
+disclaimer=This software was produced for and by Hewlett Packard Enterprise
+   All rights are reserved.
+license=non-free
+holder=Hewlett Packard Enterprise
+years=2014-2017
+comment=If csmake is made public, this copyright would need to change to
+   reflect that
+
+[versioning@snapshot-version]
+designation=snapshot
+format={datetime}.{gitSHA}
+shell_datetime=date --utc +%Y%m%d%H%M%S
+shell_getSHA=git rev-parse HEAD
+
+[versioning@rc-version]
+designation=rc
+format=rc{rc}
+value_rc=1
+
+[installmap@csmake-providers-installs]
+path_root=INSTALL_ROOT
+path_python-lib=PYTHON
+owner_root=root
+group_root=root
+
+map_CsmakeModules=
+   map: <CsmakeModules> -(1-1)-> {PYTHON}/CsmakeProviders/CsmakeModules/{~~file~~}}
+   copyright: csmake-copyright
+   owner:{root}
+   group:{root}
+   permissions:644
+
+map_CsmakeProviders=
+   map: <CsmakeProviders> -(1-1)-> {PYTHON}/CsmakeProviders/{~~file~~}}
+   copyright: csmake-copyright
+   owner:{root}
+   group:{root}
+   permissions:644
+
+[DebianPackage@debian-csmake-providers]
+package-version=1.0
+maps=csmake-providers-installs
+result=%(RESULTS)s/debpackage
+debian-directory-copyright=csmake-copyright
+
+[command@]
+description=By default, csmake will test and package csmake-providers
+0000=csmake-providers, test, debian-csmake-providers
+
+####################################3
+# Test sections
+
+[environment@test-env]
+SOURCE_GIT_PATH=%(RESULTS)s/sourcegit
+SOURCE_GIT=GitProvidersTestRepo
+CLONED_GIT_PATH=%(RESULTS)s/clonedgit
+LOCAL_GIT_PATH=%(RESULTS)s/localgit
+TESTREF_FILE=%(RESULTS)s/refToBranchAC.git
+DIFFREFS_FILE=%(RESULTS)s/logRefs.git
+GITDEPENDENT_GIT_PATH=%(RESULTS)s/dependentgit
+
+[Shell@test-teardown-git]
+command(clean)=set -x
+   rm -rf %(SOURCE_GIT_PATH)s
+   rm -rf %(CLONED_GIT_PATH)s
+   rm -rf %(LOCAL_GIT_PATH)s
+   rm -rf %(TESTREF_FILE)s
+   rm -rf %(DIFFREFS_FILE)s
+   rm -rf %(GITDEPENDENT_GIT_PATH)s
+   rm -rf %(RESULTS)s/%(SOURCE_GIT)s
+
+[Shell@test-cleanup-pypi-testing]
+command(clean)=set -x
+   TESTBASE=%(WORKING)s/CsmakeProviders/tests/CsmakeProviders/
+   rm -rf ${TESTBASE}/fakechroot
+   rm -rf ${TESTBASE}/cache
+
+#This sets up a repository that testing will use
+#Changing the order of how this repository is created will
+# affect the test cases as the tests verify correctness based
+# on the assumption that this repo is structured the way it is
+# currently scripted.
+#
+# The order of creation is
+# A
+# B
+# C:BranchA
+# D:BranchA
+# C
+# D
+# E:BranchB
+# F:BranchB
+# E':OrphanA
+# E'A:OrphanA
+# E
+# Local A
+# Local B:TopicA
+# Local B:TopicB
+
+# The SHA1's in the DIFFREFS_FILE correspond to these commits in this order
+# The files created and order of modifications (and the modifications)
+#  in the order presented are used to verify that the fetch is working
+#  the way it is expected to work - any changes to the repo structure
+#  desired should either consult the tests first, or leave the current
+#  structure intact and add new files to do other testing
+#  NOTE: To get time separation between commits we sleep 1 after each commit
+[Shell@test-setup-git]
+command(test)=set -eux
+    if [ -e %(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s ]
+    then
+        rm -rf %(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+    fi
+    mkdir -p %(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+
+    touch %(DIFFREFS_FILE)s
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+
+    pushd %(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+
+    #Create a git repository
+    #The repository will have two branches and an orphan branch
+    git init
+    echo "this is a file" > my.txt
+    git add my.txt
+    git commit -am $'A: Testing file\n\nThis is the first submit'
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'a' -m 'tag a'
+
+    echo "Mod" >> my.txt
+    git commit -am $'B: Testing file\n\nThis is the second submit'
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'b' -m 'tag b'
+
+    git checkout -b branchA
+    echo "File on a branch" > another.txt
+    git add another.txt
+    git commit -am $'C:BranchA: Testing branch\n\nThis is a branch commit'
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    MYSHA=`git rev-parse HEAD`
+    git tag -a 'branch-a-c' -m "Tag a-c"
+
+    popd
+    echo ${MYSHA} > %(TESTREF_FILE)s
+    #cp %(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s/.git/HEAD %(TESTREF_FILE)s
+    pushd %(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+
+    echo "Mod" >> another.txt
+    git commit -am $'D:BranchA: Another commit on branch\n\nThis is another branc commit'
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'branch-a-d' -m 'tag a-d'
+
+    git checkout master
+    mkdir child
+    echo "Child dir file - not on branchA" > child/childfile.txt
+    git add child/childfile.txt
+    git commit -am "C: Testing adding a file not on branch"
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+
+    echo "Mod 2" >> my.txt
+    echo "Mod" >> child/childfile.txt
+    git commit -am "D: Testing more mods"
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'd' -m 'tag d'
+
+    git checkout -b branchB
+    echo "File on second branch" > anotherb.txt
+    git add anotherb.txt
+    git commit -am $'E:BranchB: New branch B commit\n\nThis is a second branch to test common parents'
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+
+    echo "Mod" >> anotherb.txt
+    git commit -am "F:BranchB: Second branchB commit"
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'branch-b-f' -m 'tag b-f'
+    mkdir -p .git/refs/changes/14
+    cp .git/refs/tags/branch-b-f .git/refs/changes/14/99299
+
+    git checkout --orphan orphanA
+    echo "Orphan file" >> myorphan.txt
+    git add myorphan.txt
+    git commit -am "E':OrphanA: Orphan to test diverged"
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'orphan-a-eprime' -m 'orphan tag'
+
+    echo "Mod" >> myorphan.txt
+    git commit -am "E'A:OrphanA: another commit for diverged testing"
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'orphan-a-eprime-a' -m 'tag a-eprime-a'
+
+    git checkout master
+    echo "Final file" > final.txt
+    git add final.txt
+    git commit -am "E: Final commit past A and B"
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'e' -m "Added final file"
+
+    popd
+
+    #Clone the new repo - simulate local access
+    mkdir -p %(CLONED_GIT_PATH)s
+    SOURCE_ABS=`realpath %(SOURCE_GIT_PATH)s`
+
+    pushd %(CLONED_GIT_PATH)s
+
+    git clone file://${SOURCE_ABS}/%(SOURCE_GIT)s
+
+    pushd %(SOURCE_GIT)s
+
+    echo "Local file mod" > local.mod
+    git add local.mod
+    git commit -am $'Local A: My local changes\n\nThis is the first local change'
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'local-a' -m 'Added a local change'
+
+    git checkout -b TopicA origin/master
+    echo "Local file on branch" > localTopicA.txt
+    git add localTopicA.txt
+    git commit -am 'Local B:TopicA: Local change'
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'local-b-topic-a' -m 'Tag'
+
+    git checkout -b TopicB master
+    echo "Another file on branch" > localTopicB.txt
+    echo "Mod" >> local.mod
+    git add localTopicB.txt local.mod
+    git commit -m 'Local B:TopicB: Added local change B'
+    sleep 1
+    git rev-parse HEAD >> ${ABSPATH_DIFFREFS}
+    git tag -a 'local-b-topic-b' -m 'Tag'
+
+    popd
+    popd
+
+#' the dollar-apos construct messes up vi syntax parsing
+#  The comment above fixes this for the rest of the file.
+
+[TestPython@test-providers]
+test-dir=CsmakeProviders/tests/CsmakeProviders
+test=test*_*.py
+ignore-files=*TraceDumper.py, *__init__*.py
+source-dir=CsmakeProviders/
+source-git=%(SOURCE_GIT_PATH)s
+local-git=%(LOCAL_GIT_PATH)s
+cloned-git=%(CLONED_GIT_PATH)s
+git-repo=%(SOURCE_GIT)s
+git-testref=%(TESTREF_FILE)s
+git-diffrefs=%(DIFFREFS_FILE)s
+
+[TestPython@test-git-provider]
+test-dir=CsmakeProviders/tests/CsmakeProviders
+test=testGitProvider_*.py
+source-dir=CsmakeProviders/
+source-git=%(SOURCE_GIT_PATH)s
+local-git=%(LOCAL_GIT_PATH)s
+cloned-git=%(CLONED_GIT_PATH)s
+git-repo=%(SOURCE_GIT)s
+git-testref=%(TESTREF_FILE)s
+git-diffrefs=%(DIFFREFS_FILE)s
+
+[TestPython@test-pypi-provider]
+test-dir=CsmakeProviders/tests/CsmakeProviders
+test=testPypiProvider_*.py
+source-dir=CsmakeProviders/
+source-git=%(SOURCE_GIT_PATH)s
+local-git=%(LOCAL_GIT_PATH)s
+cloned-git=%(CLONED_GIT_PATH)s
+git-repo=%(SOURCE_GIT)s
+git-testref=%(TESTREF_FILE)s
+git-diffrefs=%(DIFFREFS_FILE)s
+
+[command@test]
+description=Executes unit and functional testing
+0000=test-env, test-setup-git
+0007=test-git-tagging, test-providers
+0010=git-functional-unit-tests
+0020=test-git-dependent-update
+0030=test-teardown-git & test-cleanup-pypi-testing
+
+[subcommand@test-git-tagging]
+description=Ensure tagging works properly for git
+0100=git-output-source-manifests
+0200=git-tag-single-sha
+0300=test-gittagrefs-single-sha, test-gittagrefs-single-sha-testing
+0400=git-tag-multi-sha
+0500=test-gittagrefs-multi-sha, test-gittagrefs-multi-sha-abuild
+0550=test-gittagrefs-multi-sha-anotherbuild
+0575=test-gittagrefs-multi-sha-testing
+0600=git-tag-multi-sha-fail
+
+#---------------------------------------------
+# Ensuring updates work for GitDependent
+[subcommand@test-git-dependent-update]
+description=Ensure repos are updating when changes are made
+0000=test-git-dependent-update-pull, test-git-dependent-update-verify-setup
+0100=test-git-dependent-update-checkin
+0200=test-git-dependent-update-pull-again, test-git-dependent-update-check
+
+
+[GitDependent@test-git-dependent-update-pull]
+URL=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+name=%(SOURCE_GIT)s
+local=%(GITDEPENDENT_GIT_PATH)s/test-update
+ref=branch:master
+secure=False
+env=test-git-dependent-update
+
+[GitDependent@test-git-dependent-update-pull-again]
+URL=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+name=%(SOURCE_GIT)s
+local=%(GITDEPENDENT_GIT_PATH)s/test-update
+ref=branch:master
+secure=False
+env=test-git-dependent-update
+
+[Shell@test-git-dependent-update-verify-setup]
+command(sources)=set -eux
+   ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+   pushd %(test-git-dependent-update)s
+   GITSHA=`git rev-parse HEAD`
+   mysha=`head -n11 ${ABSPATH_DIFFREFS} | tail -n1`
+   [ "$GITSHA" == "$mysha" ]
+   popd
+
+[Shell@test-git-dependent-update-checkin]
+command(sources)=set -eux
+    pushd %(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+    git checkout master
+    echo "Change after Final file" > change-after-final.txt
+    git add change-after-final.txt
+    git commit -am "F: Post-Final commit past A and B and E"
+    popd
+
+[Shell@test-git-dependent-update-check]
+command(sources)=set -eux
+   ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+   pushd %(test-git-dependent-update)s
+   GITSHA=`git rev-parse HEAD`
+   mysha=`head -n11 ${ABSPATH_DIFFREFS} | tail -n1`
+   [ "$GITSHA" != "$mysha" ]
+   [ -e change-after-final.txt ]
+   popd
+#---------------------------------------------------
+
+[subcommand@git-functional-unit-tests]
+0010=test-git-dependent-a, test-git-dependent-a-testing
+0020=test-git-dependent-b, test-git-dependent-b-testing
+0025=test-git-dependent-c, test-git-dependent-c-testing
+0030=test-latest-tag-a, test-latest-tag-a-testing
+0040=test-latest-tag-b, test-latest-tag-b-testing
+0050=test-latest-tag-c, test-latest-tag-c-testing
+0060=test-latest-tag-d, test-latest-tag-d-testing
+0070=test-latest-tag-e, test-latest-tag-e-testing
+0080=test-first-sha-a, test-first-sha-a-testing
+0090=test-first-sha-b, test-first-sha-b-testing
+
+[command@test-git]
+description=Executes unit and functional testing for git
+0000=test-env, test-setup-git, test-git-provider, test-git-tagging
+0010=git-functional-unit-tests
+0020=test-git-dependent-update
+0030=test-teardown-git
+
+[command@test-pypi]
+description=Executes unit and functional testing for pypi facade
+000=test-env, test-pypi-provider, test-cleanup-pypi-testing
+
+[GitFirstRelevantSha@test-first-sha-a]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+fetch-ref=branch:master
+env=VeryFirstSha
+
+[Shell@test-first-sha-a-testing]
+command(test)=set -eux
+    [ "%(VeryFirstSha)s" == "<unknown>" ]
+
+command(sources)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    mysha=`head -n1 ${ABSPATH_DIFFREFS} | tail -n1`
+    [ "%(VeryFirstSha)s" == "${mysha}" ]
+
+[GitFirstRelevantSha@test-first-sha-b]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+fetch-ref=branch:orphanA
+env=VeryFirstOrphanSha
+
+[Shell@test-first-sha-b-testing]
+command(test)=set -eux
+    [ "%(VeryFirstOrphanSha)s" == "<unknown>" ]
+
+command(sources)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    mysha=`head -n9 ${ABSPATH_DIFFREFS} | tail -n1`
+    [ "%(VeryFirstOrphanSha)s" == "${mysha}" ]
+
+[GitLatestShaTag@test-latest-tag-a]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+format=orphan-a-eprime
+env=E-OrphanA
+
+[Shell@test-latest-tag-a-testing]
+command(test)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    cat $ABSPATH_DIFFREFS
+    [ "%(E-OrphanA)s" == "<unknown>" ]
+
+command(sources)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    cat $ABSPATH_DIFFREFS
+    mysha=`head -n9 ${ABSPATH_DIFFREFS} | tail -n1`
+    [ "%(E-OrphanA)s" == "${mysha}" ]
+
+[GitLatestShaTag@test-latest-tag-b]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+format=*
+env=LatestBeforeBranchBTop
+fetch-ref=branch:branchB
+
+[Shell@git-output-source-manifests]
+**yields-files=
+    <test-manifest (yaml:manifest)> testing_files/test.manifest.yaml
+    <multitest-manifest (yaml:manifest)> testing_files/multitest.manifest.yaml
+command(test)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    mkdir -p %(RESULTS)s/testing_files
+    mysha=`head -n1 ${ABSPATH_DIFFREFS} | tail -n1`
+    myfile=%(RESULTS)s/testing_files/test.manifest.yaml
+    echo "- %(SOURCE_GIT)s:" > $myfile
+    echo "    abuild:" >> $myfile
+    echo "    - git" >> $myfile
+    echo "    - BRANCH: master" >> $myfile
+    echo "      REF: $mysha" >> $myfile
+    echo "      URL: file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s" >> $myfile
+    mysha=`head -n5 ${ABSPATH_DIFFREFS} | tail -n1`
+    myothersha=`head -n3 ${ABSPATH_DIFFREFS} | tail -n1`
+    myfile=%(RESULTS)s/testing_files/multitest.manifest.yaml
+    echo "- %(SOURCE_GIT)s:" > $myfile
+    echo "    abuild:" >> $myfile
+    echo "    - git" >> $myfile
+    echo "    - BRANCH: master" >> $myfile
+    echo "      REF: $mysha" >> $myfile
+    echo "      URL: file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s" >> $myfile
+    echo "- %(SOURCE_GIT)s:" >>$myfile
+    echo "    anotherbuild:" >> $myfile
+    echo "    - git" >> $myfile
+    echo "    - BRANCH: master" >> $myfile
+    echo "      REF: $myothersha" >> $myfile
+    echo "      URL: file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s" >> $myfile
+command-clean=rm -rf %(RESULTS)s/testing_files
+
+[GitTagRefs@git-tag-single-sha]
+files=<test-manifest>
+tag=testing-tagging
+local=%(GITDEPENDENT_GIT_PATH)s/TestingTagging
+
+[GitLatestShaTag@test-gittagrefs-single-sha]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+format=testing-tagging
+env=gittagref-single
+
+[Shell@test-gittagrefs-single-sha-testing]
+command(sources)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    mysha=`head -n1 ${ABSPATH_DIFFREFS} | tail -n1`
+    [ "%(gittagref-single)s" == "${mysha}" ]
+
+[GitTagRefs@git-tag-multi-sha]
+files=<multitest-manifest>
+tag=testing-multitagging
+multiref-allowed=True
+local=%(GITDEPENDENT_GIT_PATH)s/TestingTagging
+nessage=This tag brought to you by the letter T for Testing
+
+[GitLatestShaTag@test-gittagrefs-multi-sha]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+format=testing-multitagging
+env=gittagref-multitagging
+
+[GitLatestShaTag@test-gittagrefs-multi-sha-abuild]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+format=testing-multitagging_abuild
+env=gittagref-multitagging_abuild
+
+[GitLatestShaTag@test-gittagrefs-multi-sha-anotherbuild]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+format=testing-multitagging_anotherbuild
+env=gittagref-multitagging_anotherbuild
+
+[Shell@test-gittagrefs-multi-sha-testing]
+command(sources)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    mysha=`head -n5 ${ABSPATH_DIFFREFS} | tail -n1`
+    myothersha=`head -n3 ${ABSPATH_DIFFREFS} | tail -n1`
+    [ "%(gittagref-multitagging)s" == "${mysha}" ]
+    [ "%(gittagref-multitagging_abuild)s" == "${mysha}" ]
+    [ "%(gittagref-multitagging_anotherbuild)s" == "${myothersha}" ]
+
+[&AssertFails@git-tag-multi-sha-fail]
+[GitTagRefs@git-tag-multi-sha-fail]
+files=<multitest-manifest>
+tag=testing-multitagging
+local=%(GITDEPENDENT_GIT_PATH)s/%(SOURCE_GIT)s
+
+[Shell@test-latest-tag-b-testing]
+command(test)=set -eux
+    [ "%(LatestBeforeBranchBTop)s" == "<unknown>" ]
+
+command(sources)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    mysha=`head -n8 ${ABSPATH_DIFFREFS} | tail -n1`
+    [ "%(LatestBeforeBranchBTop)s" == "${mysha}" ]
+
+[GitLatestShaTag@test-latest-tag-c]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+format=branch-[ab]*
+env=LatestTagABBranches
+
+[Shell@test-latest-tag-c-testing]
+command(test)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    [ "%(LatestTagABBranches)s" == "<unknown>" ]
+
+command(sources)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    mysha=`head -n8 ${ABSPATH_DIFFREFS} | tail -n1`
+    [ "%(LatestTagABBranches)s" == "${mysha}" ]
+
+[GitLatestShaTag@test-latest-tag-d]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+format=[abe]
+env=MasterTagsABE
+
+[Shell@test-latest-tag-d-testing]
+command(test)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    [ "%(MasterTagsABE)s" == "<unknown>" ]
+
+command(sources)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    mysha=`head -n11 ${ABSPATH_DIFFREFS} | tail -n1`
+    [ "%(MasterTagsABE)s" == "${mysha}" ]
+
+[GitLatestShaTag@test-latest-tag-e]
+repo=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+format=[abe]
+env=MasterTagsABE-beforeD
+fetch-ref=tag:d
+
+[Shell@test-latest-tag-e-testing]
+command(test)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    [ "%(MasterTagsABE-beforeD)s" == "<unknown>" ]
+
+command(sources)=set -eux
+    ABSPATH_DIFFREFS=`realpath %(DIFFREFS_FILE)s`
+    mysha=`head -n2 ${ABSPATH_DIFFREFS} | tail -n1`
+    [ "%(MasterTagsABE-beforeD)s" == "${mysha}" ]
+
+[GitDependent@test-git-dependent-b]
+URL=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+name=%(SOURCE_GIT)s
+local=%(GITDEPENDENT_GIT_PATH)s
+ref=changes/14/99299
+secure=False
+
+[Shell@test-git-dependent-b-testing]
+command(sources)=set -eux
+   pushd %(GITDEPENDENT_GIT_PATH)s/%(SOURCE_GIT)s
+   grep -w Mod anotherb.txt
+   if [ -e myorphan.txt ]
+   then
+       cat Thisfileshouldntexist
+   fi
+   if [ -e final.txt ]
+   then
+       cat Thisfileshouldntexist
+   fi
+   popd
+
+[GitDependent@test-git-dependent-c]
+URL=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+name=%(SOURCE_GIT)s
+local=%(GITDEPENDENT_GIT_PATH)s
+ref=branch:master
+secure=True
+
+[Shell@test-git-dependent-c-testing]
+command(sources)=set -eux
+   pushd %(GITDEPENDENT_GIT_PATH)s/%(SOURCE_GIT)s
+   cat final.txt
+   if [ -e anotherb.txt ]
+   then
+       cat Thisfileshoudntexist
+   fi
+   popd
+
+[GitDependent@test-git-dependent-a]
+URL=file://%(SOURCE_GIT_PATH)s/%(SOURCE_GIT)s
+name=%(SOURCE_GIT)s
+local=%(GITDEPENDENT_GIT_PATH)s
+ref=master
+secure=True
+
+[Shell@test-git-dependent-a-testing]
+command(sources)=set -eux
+   pushd %(GITDEPENDENT_GIT_PATH)s/%(SOURCE_GIT)s
+   cat final.txt
+   if [ -e anotherb.txt ]
+   then
+       cat Thisfileshoudntexist
+   fi
+   popd

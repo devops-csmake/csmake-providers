@@ -1,0 +1,110 @@
+# <copyright>
+# (c) Copyright 2017 Hewlett Packard Enterprise Development LP
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
+# Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# </copyright>
+
+[~~phases~~]
+clean=Clean the build results and build generated files
+sources=Get the sources to perform the build
+build=Build the shared libraries this package uses
+package=Create the installable package
+**sequences=
+    clean -> sources -> build -> package: Create the installer
+**default=clean->sources->build->package
+
+[metadata@python-gitdb]
+name=python-gitdb
+version=0.6.4
+description=Enables git api plumbing on python (Dependency for csmake-providers)
+about=Provides plumbing access to git via python
+packager=HP CloudSystem Nebula Team  <hpcloud-nebulateam@hp.com>
+manufacturer=Hewlett-Packard Enterprose
+depends=python-smmap (>=0.8.5), libc6
+keywords=cloudsystem build dependency 
+copyrights=python-gitdb-copyright
+classifiers=
+    Development Status :: 5 - Production/Stable
+    Intended Audience :: Developers
+    Topic :: Software Development :: Libraries :: Python Modules
+    License :: OSI Approved :: BSD License
+    Programming Language :: Python :: 2
+    Programming Language :: Python :: 2.7
+    Operating System :: POSIX :: Linux
+
+[copyright@python-gitdb-copyright]
+license=BSD-3-clause
+holder=Sebastian Thiel
+years=2008-2014
+
+#Technically, the debian-directory-copyright is HP's here
+[DebianPackage@debian-python-gitdb]
+package-version=1.0
+arch=amd64
+maps=python-gitdb-installs
+result=%(RESULTS)s/debpackage
+debian-directory-copyright=python-gitdb-copyright
+
+
+#Virtual box source to get include files to build against
+[environment@get-python-gitdb-source-env]
+INET_LOCATION=https://github.com/gitpython-developers/gitdb.git
+
+[versioning@hp-brew]
+designation=private
+format=hp-cs
+
+[Shell@get-python-gitdb-source]
+command(sources)=set -x
+  pushd %(RESULTS)s
+      git clone %(INET_LOCATION)s
+      pushd gitdb
+          git checkout tags/0.6.4
+      popd
+  popd
+command-clean=rm -rf %(RESULTS)s/gitdb
+
+[Shell@build-gitdb]
+**yields-files=
+    <python-gitdb (python:library)>  gitdb/build/lib.linux-x86_64-2.7/gitdb
+                    
+command(build)=set -x
+  pushd %(RESULTS)s/gitdb
+     python setup.py build
+     strip --strip-unneeded build/lib.linux-x86_64-2.7/gitdb/_perf.so
+  popd
+command-clean=set -x
+  rm -rf %(RESULTS)s/gitdb
+
+[installmap@python-gitdb-installs]
+path_root=INSTALL_ROOT
+path_python-lib=PYTHON
+owner_root=root
+group_root=root
+
+map_bin=
+   map: <python-gitdb> -(1-1)-> {PYTHON}/{~~file~~}}
+   copyright: python-gitdb-copyright
+   owner:{root} 
+   group:{root}
+   permissions: 644
+
+[subcommand@common-build-steps]
+description=Prepare/build files for packaging
+0000=hp-brew, get-python-gitdb-source-env, get-python-gitdb-source, build-gitdb
+
+[command@]
+description=Create and package a csmake release
+00=python-gitdb, common-build-steps, debian-python-gitdb
+

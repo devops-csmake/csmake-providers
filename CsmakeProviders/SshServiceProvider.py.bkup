@@ -1,0 +1,556 @@
+import threading
+import subprocess
+import os.path
+import time
+from CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceConfig
+from CsmakeServiceProvider import CsmakeServiceDaemon
+
+class SshConfigurationHelper:
+    @staticmethod
+    def sshDebugLevel(settings):
+        loglevel = 'ERROR'
+        if settings['quiet']:
+            loglevel = 'QUIET'
+        else:
+            if settings['verbose']:
+                loglevel = 'VERBOSE'
+            if settings['debug']:
+                loglevel = 'DEBUG'
+            if settings['dev-output']:
+                loglevel = 'DEBUG3'
+        return loglevel
+
+class SshClientConfig(CsmakeServiceConfig):
+    HOMES_TO_GROCK = ['/root', '/home/*']
+
+    def ensure(self):
+        #Get the owner and group id of the current directory
+        self.port = self.manager.options['port']
+        pathstat = os.stat(self.path)
+        pathowner = pathstat.st_uid
+        pathgroup = pathstat.st_gid
+
+        self._backupAndSetup(
+            os.path.join(
+                self.fullpath,
+                ".ssh/config"),
+            owner=str(pathowner),
+            group=str(pathgroup),
+            permissions="600",
+            dirpermissions="750",
+            in_chroot=False)
+
+        CsmakeServiceConfig.ensure(self)
+
+    def writefile(self, fobj):
+        loglevel = SshConfigurationHelper.sshDebugLevel(self.module.settings)
+        clientList = []
+        for interface in self.manager.options['interfaces']:
+            clientList.append(
+                """Host %s
+                      HostName %s
+                      Port %s
+                      LogLevel %s""" % (
+                interface,
+                interface,
+                self.port,
+                loglevel))
+        fobj.write('\n'.join(clientList))
+
+class SshDaemonConfig(CsmakeServiceConfig):
+    CONFIG_FILE_NAME = "sshd_config"
+
+    def ensure(self):
+        self.port = self.manager.options['port']
+        pathToConfig = os.path.join(
+            self.path,
+            self.CONFIG_FILE_NAME )
+        self._backupAndSetup(pathToConfig)
+
+        #Ensure the directory /var/run/sshd falls under the control
+        # of the daemon config manager object.
+        #sshd requires this for "Privilege separation"
+        self._backupAndSetup(
+            "/var/run/sshd/touch",
+            setup=False,
+            writefile=self.thunkwritefile )
+
+        self.manager.daemon.setDaemonConfigFile(pathToConfig)
+
+        CsmakeServiceConfig.ensure(self)
+
+    def thunkwritefile(self, fobj):
+        pass
+
+    def writefile(self, fobj):
+        loglevel = SshConfigurationHelper.sshDebugLevel(self.module.settings)
+        daemonList = ["LogLevel %s" % loglevel]
+        for interface in self.manager.options['interfaces']:
+            daemonList.append(
+                "ListenAddress %s:%s" % (
+                    interface,
+                    self.port ) )
+        fobj.write('\n'.join(daemonList))
+
+"""
+class SshConfigurationManager:
+    def __init__(self, module, daemon, command_prefix=[], cwd=None):
+        CsmakeServiceConfigManager.__init__(self, module, daemon, command_prefix, cwd)
+        self.user = options['user']
+        self.daemonConfigPath = 'etc/csmake_sshd/'
+        self.daemonConfig = "sshd_config"
+        self.clientConfigPath = 'home/%s/.ssh/' % options['user']
+        self.clientConfig = "config"
+        self.chroot = "/"
+        if 'chroot' in options:
+            self.chroot = options['chroot']
+        if 'client-chroot' in options:
+            self.clientChroot = options['client-chroot']
+        else:
+            self.clientChroot = self.chroot
+        self.port = options['port']
+        self.interfaces = options['interfaces']
+        self.clientBackup = None
+
+    def daemonConfigurationFile(self):
+        return self.daemonConfigPath + self.daemonConfig
+
+    def ensure(self):
+        #Creating a "Privilege separation directory" for sshd
+        subprocess.call(
+            ['sudo', 'chroot', self.chroot, 'mkdir', '-p', '/var/run/sshd'],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+
+        sshdconfigpath = os.path.join(
+            self.chroot,
+            self.daemonConfigPath )
+        subprocess.call(
+            ['sudo', 'mkdir', '-p', sshdconfigpath ],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+        subprocess.call(
+            ['sudo', 'chmod', '777', sshdconfigpath ],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err())
+        sshdconfig = os.path.join(
+            sshdconfigpath,
+            self.daemonConfig )
+        loglevel = 'ERROR'
+        if self.module.settings['quiet']:
+            loglevel = 'QUIET'
+        else:
+            if self.module.settings['verbose']:
+                loglevel = 'VERBOSE'
+            if self.module.settings['debug']:
+                loglevel = 'DEBUG'
+            if self.module.settings['dev-output']:
+                loglevel = 'DEBUG3'
+        daemonList = ["LogLevel %s" % loglevel]
+        clientList = []
+        for interface in self.interfaces:
+            daemonList.append(
+                "ListenAddress %s:%s" % (
+                    interface,
+                    self.port ) )
+"""
+#            clientList.append(
+#                """Host %s
+#                      HostName %s
+#                      Port %s
+#                      LogLevel %s""" % (
+"""
+                interface,
+                interface,
+                self.port,
+                loglevel))
+        with open(sshdconfig, 'w') as configfile:
+            configfile.write('\n'.join(daemonList))
+
+        sshconfigpath = os.path.join(
+            self.clientChroot,
+            self.clientConfigPath )
+        subprocess.call(
+            ['sudo', 'mkdir', '-p', sshconfigpath ],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+        subprocess.call(
+            ['sudo', 'chmod', '777', sshconfigpath],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+        subprocess.call(
+            ['sudo', 'chroot', self.clientChroot,
+                'chown', self.user, self.clientConfigPath],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err())
+        sshconfig = os.path.join(
+            sshconfigpath,
+            self.clientConfig )
+        if os.path.exists(sshconfig):
+            self.clientBackup = os.path.join(
+                sshconfigpath,
+                'csmake_config_backup' )
+            subprocess.check_call(
+                ['sudo', 'mv', sshconfig, self.clientBackup],
+                stdout.self.module.log.out(),
+                stderr=self.module.log.err() )
+
+        with open(sshconfig, 'w') as configfile:
+            configfile.write('\n'.join(clientList))
+        subprocess.check_call(
+            ['sudo', 'chroot', self.clientChroot,
+                'chown', self.user,
+                os.path.join(
+                    '/',
+                    self.clientConfigPath,
+                    self.clientConfig)],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+        subprocess.check_call(
+            ['sudo', 'chmod', '750', sshconfigpath],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+        subprocess.check_call(
+            ['sudo', 'chmod', '600', sshconfig],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+
+    def delete(self):
+        sshconfigpath = os.path.join(
+            self.clientChroot,
+            self.clientConfigPath )
+        sshconfig = os.path.join(
+            sshconfigpath,
+            self.clientConfig )
+        sshdconfigpath = os.path.join(
+            self.chroot,
+            self.daemonConfigPath )
+        sshdconfig = os.path.join(
+            sshdconfigpath,
+            self.daemonConfig )
+
+        subprocess.call(
+            ['sudo', 'rm', sshconfig],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+
+        subprocess.call(
+            ['sudo', 'rm', sshdconfig],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+
+        subprocess.call(
+            ['sudo', 'rmdir', '-p', sshdconfigpath],
+            stdout=self.module.log.out(),
+            stderr=self.module.log.err() )
+
+        if self.clientBackup is not None:
+            subprocess.check_call(
+                ['sudo', 'mv', self.clientBackup, sshconfig],
+                stdout=self.module.log.out(),
+                stderr=self.module.log.err() )
+        else:
+            subprocess.call(
+                ['sudo', 'rmdir', '-p', sshconfigpath],
+                stdout=self.module.log.out(),
+                stderr=self.module.log.err() )
+
+    def clean(self):
+        self.delete()
+"""
+
+class SshServiceDaemon(CsmakeServiceDaemon):
+
+    def __init__(self, module, provider, options):
+        CsmakeServiceDaemon.__init__(self, module, provider, options)
+        self.process = None
+        self.daemonConfigFile = None
+
+    def setDaemonConfigFile(self, path):
+        self.daemonConfigFile = path
+
+    def _setupConfigs(self):
+        #Handle the client side configuration
+        prefix = ''
+        if self.options['client-chroot'] is not None:
+            prefix = self.options['client-chroot']
+        self.configManager.register(
+            SshClientConfig,
+            SshClientConfig.HOMES_TO_GROCK,
+            ensure=False,
+            in_chroot=False,
+            path_prefix = prefix )
+
+        #Handle the server side configuration
+        self.configManager.register(
+            SshDaemonConfig,
+            "/etc/csmake_ssh_%s" % self.options['tag'],
+            ensure=False )
+
+        CsmakeServiceDaemon._setupConfigs(self)
+
+    def _startListening(self):
+        if self.daemonConfigFile is None:
+            self.log.error("No config file was set for the daemon")
+            self.log.failed()
+            return None
+        fullsshd = self.configManager.shellout(
+            subprocess.check_output,
+            ['which', 'sshd'] )
+        command = [
+          fullsshd, '-e', '-D',
+          '-f', '/' + self.daemonConfigFile
+        ]
+        self.log.debug("Calling Popen with: %s", ' '.join(command))
+        self.process = self.configManager.shellout(
+            subprocess.Popen,
+            command )
+
+    def _cleanup(self):
+        try:
+            try:
+                processes = self.configManager.shellout(
+                    subprocess.check_output,
+                    [ 'ps', '-o', 'pid', '--ppid', str(self.process.pid), '--noheaders' ] )
+                processes = processes.split()
+                for process in processes:
+                    self.configManager.shellout(
+                        subprocess.call,
+                        [ 'kill', '-9', process ] )
+            except:
+                self.log.exception("Could not stop sshd using standard procedure, attempting to use sudo calls exclusively")
+                subprocess.call("""set -eux
+                    for x in `sudo ps -o pid --ppid %d --noheaders`
+                    do
+                        sudo kill -9 $x
+                    done
+                    """ % self.process.pid,
+                    shell=True,
+                    stdout=self.log.out(),
+                    stderr=self.log.err() )
+                subprocess.call(
+                    ['sudo', 'kill', str(self.process.pid)],
+                    stdout=self.log.out(),
+                    stderr=self.log.err())
+        except:
+            self.log.exception("Couldn't terminate process cleanly")
+
+"""
+class SshServiceDaemon(threading.Thread):
+    def __init__(self, module, **options):
+        threading.Thread.__init__(self)
+        self.configManager = SshConfigurationManager(module, **options)
+        self.module = module
+        self.log = self.module.log
+        self.chroot = None
+        if 'chroot' in options:
+            self.chroot = options['chroot']
+        self.stopListening = False
+        self.waiters = 0
+        self.ready = False
+        self.readySemaphore = threading.Semaphore(0)
+        self.endingSemaphore = threading.Semaphore(0)
+        self.readyCS = threading.Lock()
+        self.exception = None
+        self.process = None
+
+    def stop(self):
+        self.stopListening = True
+        self.endingSemaphore.release()
+        self.join()
+
+    def run(self):
+        try:
+            self.configManager.ensure()
+            chrootpart = ['sudo']
+            if self.chroot is not None:
+                chrootpart = ['sudo', 'chroot', self.chroot]
+            command = chrootpart + ['which', 'sshd']
+            fullsshd = subprocess.check_output(command).strip()
+            command = [
+              fullsshd, '-e', '-D',
+              '-f', '/' + self.configManager.daemonConfigurationFile()
+            ]
+            command = chrootpart + command
+            self.log.debug("Calling Popen with: %s", ' '.join(command))
+            self.process = subprocess.Popen(
+                command,
+                stdout = self.module.log.out(),
+                stderr = self.module.log.err() )
+            self._setReady()
+            self.endingSemaphore.acquire()
+            currentStatus = self.process.poll()
+            if currentStatus is not None:
+                self.log.error("sshd process ended without being terminated with exit code %d", currentStatus)
+            else:
+                try:
+"""
+#                    subprocess.call("""set -eux
+#for x in `sudo ps -o pid --ppid %d --noheaders`
+#do
+#    sudo kill -9 $x
+#done""" % self.process.pid,
+"""
+                        shell=True,
+                        stdout=self.log.out(),
+                        stderr=self.log.err() )
+                    subprocess.call(
+                        ['sudo', 'kill', str(self.process.pid)],
+                        stdout=self.log.out(),
+                        stderr=self.log.err())
+                    if self.process.poll() is None:
+                        time.sleep(3)
+                        if self.process.poll() is None:
+                            subprocess.call(
+                                ['sudo', 'kill', '-9', str(self.process.pid)],
+                                stdout=self.log.out(),
+                                stderr=self.log.err() )
+                except:
+                    self.module.log.exception("Couldn't terminate process cleanly")
+
+        except:
+            self.module.log.exception("The sshd process failed")
+        finally:
+            self._setReady()
+            self.stopListening = True
+            self.configManager.clean()
+
+    def isListening(self):
+        return not self.stopListening
+
+    def _setReady(self):
+        if self.ready:
+            return
+        self.log.debug("Entered setReady")
+        self.readyCS.acquire()
+        self.log.debug("setReady CS")
+        self.ready = True
+        while self.waiters:
+            self.readySemaphore.release()
+            self.waiters = self.waiters - 1
+        self.readyCS.release()
+        self.log.debug("Exit setReady")
+
+    def waitUntilReady(self):
+        self.log.debug("Entered waitUntilReady")
+        self.readyCS.acquire()
+        if not self.ready:
+            self.waiters = self.waiters + 1
+            self.readyCS.release()
+            self.log.info("Waiting for SSH service to start")
+            self.readySemaphore.acquire()
+            self.log.info("SSH service has started")
+        else:
+            self.readyCS.release()
+"""
+
+class SshServiceProvider(CsmakeServiceProvider):
+
+    serviceProviders = {}
+
+    def __init__(self, module, **options):
+        CsmakeServiceProvider.__init__(self, module, **options)
+        self.serviceClass = SshServiceDaemon
+
+    def _processOptions(self):
+        CsmakeServiceProvider._processOptions(self)
+        if 'client-chroot' not in self.options:
+            self.options['client-chroot'] = self.options['chroot']
+        self.options['tag'] = self.tag
+    """
+    @classmethod
+    def getServiceProvider(clazz, tag):
+        if tag not in clazz.serviceProviders:
+            return None
+        return clazz.serviceProviders[tag]
+
+    @classmethod
+    def createServiceProvider(clazz, tag, module, **options):
+        provider = clazz.getServiceProvider(tag)
+        if provider is None:
+            provider = clazz(module, **options)
+            clazz.serviceProviders[tag] = provider
+        return provider
+
+    @classmethod
+    def hasServiceProvider(clazz, tag):
+        return tag in clazz.serviceProviders
+
+    @classmethod
+    def disposeServiceProvider(clazz, tag):
+        if tag not in clazz.serviceProviders:
+            return
+        clazz.serviceProviders[tag].endService()
+        del clazz.serviceProviders[tag]
+
+    def __init__(self, module, **options):
+        self.sshService = None
+        self.startService(module, **options)
+
+    def _findOpenTcpPort(self, start, stop):
+        openPort = None
+        for port in range(start, stop+1):
+            try:
+                subprocess.check_call(
+                    ['nc', '-z', 'localhost', str(port)] )
+                self.module.log.debug("Port %d is occupied", port)
+            except subprocess.CalledProcessError:
+                #This port is free
+                self.module.log.debug("Port %d is free", port)
+                openPort = port
+            if openPort is not None:
+                break
+        return openPort
+
+    def startService(self, module, **options):
+        self.module = module
+        if self.sshService is not None:
+            return self.sshService
+        if 'user' not in options:
+            module.log.error("A 'user' option must be provided")
+            return None
+        #TODO: Perhaps have a way to scan for an open loopback address?
+        if 'interfaces' not in options:
+            options['interfaces'] = 'localhost'
+        if 'port' not in options:
+            #Search for an open port
+            lower=2222
+            upper=3333
+            if 'port-range' in options:
+                rangeParts = options['port-range'].split('-')
+                if len(rangeParts) != 2:
+                    module.log.error("Range in 'port-range' must be <lower>-<upper>")
+                    module.log.error("    Got: %s", options['port-range'])
+                    return None
+                lower = int(rangeParts[0].strip())
+                upper = int(rangeParts[1].strip())
+            else:
+                module.log.info("Range for ports not defined, using %d-%d", lower, upper)
+            openPort = self._findOpenTcpPort(lower,upper)
+            if openPort is None:
+                module.log.error("Ports %d-%d are all occupied", lower, upper)
+                return None
+            options['port'] = str(openPort)
+        interfaces = ','.join(options['interfaces'].split('\n')).split(',')
+        options['interfaces'] = [
+            x.strip() for x in interfaces if len(x.strip()) > 0 ]
+        options['tag'] = self.tag
+        self.sshService = SshServiceDaemon(
+            module,
+            **options )
+        self.sshService.start()
+        self.sshService.waitUntilReady()
+        return self.sshService
+
+    def isServiceExecuting(self):
+        if self.sshService is not None:
+            self.sshService.waitUntilReady()
+            return self.sshService.isListening()
+        return False
+
+    def endService(self):
+        if self.sshService is None:
+            return None
+        self.sshService.stop()
+        self.sshService = None
+    """
