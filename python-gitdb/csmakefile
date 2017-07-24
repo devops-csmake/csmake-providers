@@ -23,15 +23,19 @@ package=Create the installable package
 **sequences=
     clean -> sources -> build -> package: Create the installer
 **default=clean->sources->build->package
+**requires=csmake-packaging, csmake-swak
+
+[translatePackageName@~~libc6~~]
+rpm=glibc (>= 2.12)
 
 [metadata@python-gitdb]
 name=python-gitdb
 version=0.6.4
 description=Enables git api plumbing on python (Dependency for csmake-providers)
 about=Provides plumbing access to git via python
-packager=HP CloudSystem Nebula Team  <hpcloud-nebulateam@hp.com>
-manufacturer=Hewlett-Packard Enterprose
-depends=python-smmap (>=0.8.5), libc6
+packager=Jeremiah Patterson <jerpat@hpe.com>
+manufacturer=Hewlett Packard Enterprose
+depends=python (>= 2.6), python-smmap (>=0.8.5), libc6
 keywords=cloudsystem build dependency 
 copyrights=python-gitdb-copyright
 classifiers=
@@ -40,6 +44,7 @@ classifiers=
     Topic :: Software Development :: Libraries :: Python Modules
     License :: OSI Approved :: BSD License
     Programming Language :: Python :: 2
+    Programming Language :: Python :: 2.6
     Programming Language :: Python :: 2.7
     Operating System :: POSIX :: Linux
 
@@ -56,6 +61,13 @@ maps=python-gitdb-installs
 result=%(RESULTS)s/debpackage
 debian-directory-copyright=python-gitdb-copyright
 
+[Signature@default-signature]
+[RpmPackage@rpm-python-gitdb]
+package-version=1.0
+arch=x86_64
+maps=python-gitdb-installs
+result=%(RESULTS)s/rpmfile
+signers=default-signature
 
 #Virtual box source to get include files to build against
 [environment@get-python-gitdb-source-env]
@@ -106,5 +118,5 @@ description=Prepare/build files for packaging
 
 [command@]
 description=Create and package a csmake release
-00=python-gitdb, common-build-steps, debian-python-gitdb
+00=python-gitdb, common-build-steps, debian-python-gitdb & rpm-python-gitdb
 
