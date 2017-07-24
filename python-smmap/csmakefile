@@ -21,14 +21,15 @@ sources=Download the sources for this package
 package=Create the installer package
 **sequences=clean->sources->package: Create a clean installer package
 **default=clean->sources->package
+**requires=csmake-packaging, csmake-swak
 
 [metadata@python-smmap]
 name=python-smmap
 version=0.8.5
 description=Enables fast mmap in python (Dependency for csmake-providers)
 about=Provides plumbing access to git via python
-packager=HP CloudSystem Nebula Team  <hpcloud-nebulateam@hp.com>
-manufacturer=Hewlett-Packard Enterprose
+packager=Jeremiah Patterson <jerpat@hpe.com>
+manufacturer=Hewlett Packard Enterprose
 depends=python (>=2.6)
 keywords=cloudsystem build dependency 
 copyrights=python-smmap-copyright
@@ -51,6 +52,12 @@ maps=python-smmap-installs
 result=%(RESULTS)s/debpackage
 debian-directory-copyright=python-smmap-copyright
 
+[Signature@default-signature]
+[RpmPackage@rpm-python-smmap]
+package-version=1.0
+maps=python-smmap-installs
+result=%(RESULTS)s/rpmfile
+signers=default-signature
 
 #Virtual box source to get include files to build against
 [environment@get-python-smmap-source-env]
@@ -91,5 +98,5 @@ description=Prepare/build files for packaging
 
 [command@]
 description=Create and package a csmake release
-00=python-smmap, common-build-steps, debian-python-smmap
+00=python-smmap, common-build-steps, debian-python-smmap & rpm-python-smmap
 

@@ -35,10 +35,10 @@ about=Provides nice porcelain (and plumbing access) to git via python
  The pip installation of GitPython installs in a location that is after
  the deb package install in the PYTHONPATH.  Use of this package
  will rectify this problem.
-packager=HP CloudSystem Nebula Team  <hpcloud-nebulateam@hp.com>
-manufacturer=Hewlett-Packard Enterprose
-depends=python-gitdb (>=0.6.4)
-keywords=cloudsystem build dependency 
+packager=Jeremiah Patterson <jerpat@hpe.com>
+manufacturer=Hewlett Packard Enterprose
+depends=python (>= 2.6), python-gitdb (>=0.6.4)
+keywords=csmake provider git build dependency 
 copyrights=python-git-copyright
 classifiers=
     Development Status :: 5 - Production/Stable
@@ -61,6 +61,12 @@ maps=python-git-installs
 result=%(RESULTS)s/debpackage
 debian-directory-copyright=python-git-copyright
 
+[Signature@default-signature]
+[RpmPackage@rpm-python-git]
+package-version=1.0
+maps=python-git-installs
+result=%(RESULTS)s/rpmfile
+signers=default-signature
 
 #Virtual box source to get include files to build against
 [environment@get-python-git-source-env]
@@ -100,5 +106,5 @@ description=Prepare/build files for packaging
 
 [command@]
 description=Create and package a csmake release
-00=python-git, common-build-steps, debian-python-git
+00=python-git, common-build-steps, debian-python-git & rpm-python-git
 

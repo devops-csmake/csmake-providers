@@ -22,16 +22,18 @@ package=Create an installable package
 **sequences=
     clean->sources->package: Full clean build
 **default= clean->sources->package
+**requires= csmake-packaging, csmake-swak
 
 [metadata@python-packaging]
 name=python-packaging
 version=15.3.0
 description=Implements semantics for PEP 440 versioning definition
 about=This is the canonical pypa python version semantics library
-packager=HP CloudSystem Nebula Team  <hpcloud-nebulateam@hp.com>
-manufacturer=Hewlett-Packard Enterprose
+packager=Jeremiah Patterson <jerpat@hpe.com>
+manufacturer=Hewlett Packard Enterprose
 keywords=cloudsystem build dependency 
 copyrights=python-packaging-copyright
+depends=python (>= 2.6)
 classifiers=
     Topic :: Software Development :: Libraries :: Python Modules
     Development Status :: 5 - Production/Stable
@@ -45,6 +47,13 @@ classifiers=
 license=Apache
 holder=Donald Stufft
 years=2014
+
+[Signature@default-signature]
+[RpmPackage@rpm-python-packaging]
+package-version=1.0
+maps=python-packaging-installs
+result=%(RESULTS)s/rpmfile
+signers=default-signature
 
 #Technically, the debian-directory-copyright is HP's here
 [DebianPackage@debian-python-packaging]
@@ -93,5 +102,5 @@ description=Prepare/build files for packaging
 
 [command@]
 description=Create and package a csmake release
-00=python-packaging, common-build-steps, debian-python-packaging
+00=python-packaging, common-build-steps, debian-python-packaging & rpm-python-packaging
 
