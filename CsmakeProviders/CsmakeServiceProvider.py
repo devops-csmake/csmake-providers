@@ -720,7 +720,7 @@ class CsmakeServiceConfigManager(threading.Thread):
     def getDaemon(self):
         return self.daemon
 
-    def shellout(self, subprocess_call, command, in_chroot=True, sudo=True, quiet_check=False):
+    def shellout(self, subprocess_call, command, in_chroot=True, sudo=True, quiet_check=False, with_user_env=False):
         keywords = {}
         callCommand = command
         if subprocess_call is not subprocess.check_output:
@@ -730,12 +730,15 @@ class CsmakeServiceConfigManager(threading.Thread):
             keywords['stderr'] = subprocess.STDOUT
         if self.cwd is not None:
             keywords['cwd'] = self.cwd
+        sudo_cmd = ['sudo']
+        if with_user_env:
+            sudo_cmd.append('-E')
         if in_chroot and self.chroot is not None:
             if not sudo or self.noSudo :
                 self.log.error("Can't chroot without sudo")
-            callCommand = ['sudo', 'chroot', self.chroot] + command
+            callCommand = sudo_cmd + ['chroot', self.chroot] + command
         elif sudo and not self.noSudo:
-            callCommand = ['sudo'] + command
+            callCommand = sudo_cmd + command
         self.log.devdebug("shellout: %s(%s, %s)", str(subprocess_call), callCommand, str(keywords))
         return subprocess_call(
             callCommand,
