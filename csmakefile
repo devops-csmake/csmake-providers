@@ -39,7 +39,7 @@ rpm=python-inotify
 
 [metadata@csmake-providers]
 name=csmake-providers
-version=1.3.33
+version=1.3.34
 description=modules to support using various remote sources with builds
 about=Git, tar, etc is used in a lot of ways in building product.  This
  package is intended to support usage of git, svn, swift, scp, etc.
