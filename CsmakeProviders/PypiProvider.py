@@ -1,20 +1,5 @@
 # <copyright>
-# (c) Copyright 2017 Hewlett Packard Enterprise Development LP
-#
-# This program is free software: you can redistribute it and/or modify it
-# under the terms of the GNU General Public License as published by the
-# Free Software Foundation, either version 3 of the License, or (at your
-# option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
-# Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-# </copyright>
-# <copyright>
+# (c) Copyright 2021 Cardinal Peak Technologies
 # (c) Copyright 2017 Hewlett Packard Enterprise Development LP
 #
 # This program is free software: you can redistribute it and/or modify it
@@ -1094,9 +1079,15 @@ class PypiContext:
                 #...annoying, we're carrying around the link and the filename
                 #so we have to find and split out any fragment here as well
                 linkpart = link[0].split('#')[0]
+                abspart = ''
+                parsed = urlparse.urlsplit(linkpart)
+                if len(parsed.scheme) > 0:
+                    linkparts = linkpart.split('/',3)
+                    linkpart = linkparts[-1]
+                    abspart = '/'.join(linkparts[:-1])
                 fulllink = urlparse.urljoin(
                     url,
-                    urllib2.quote(linkpart) )
+                    abspart + '/' + urllib2.quote(linkpart) )
 
                 if filesplit['filename'] not in packageCache[package][0]:
                     packageCache[package][0][filesplit['filename']] = [
