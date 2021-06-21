@@ -1313,6 +1313,19 @@ class HidePipFile(CsmakeServiceConfig):
     def update(self):
         pass
 
+class FauxCertBundleTargetDirectory(CsmakeServiceConfig):
+    def ensure(self):
+        self._backupAndSetup(
+            os.path.join(
+                self.path,
+                SSLCertificateManager.FAUX_CERT_DIR,
+                "README" ) )
+
+        CsmakeServiceConfig.ensure(self)
+
+    def writefile(self, fobj):
+        fobj.write("This is a temporary directory for the purpose of supporting the PypiFacade")
+
 class PypiController:
     """The controller's job is to make sense of requests and provides
        a control for clients to adjust package version availability.
@@ -1496,18 +1509,33 @@ class PypiController:
 
             def writefile(innerself, fobj):
                 #Write out the desired config
+                extraLines = []
                 certManager = innerself.manager.getDaemon().getCertificateManager()
                 if len(certManager.certbundles()) <= 0:
                     self.log.error("There were no CA bundles to reference to install our temporary root CA")
-                    return
+                    if len(certManager.certfiles()) <= 0:
+                        self.log.error("There were no CA files to reference, going to set trusted server")
+                        part = 'localhost'
+                        try:
+                            part = self.getCurrentUrl().split('/')[2]
+                            part = part.split(':')[0]
+                        except:
+                            self.log.warning("Cert installations all failed and cant even get the right url for trusted-host - using localhost, but something's probably really wrong here")
+                            part = 'localhost'
+                        extraLines.append('trusted-host=%s\n' % part)
+
+                    else:
+                        extraLines.append('cert=/%s\n' % os.path.relpath(certManager.certfiles()[0], self.chroot))
+                else:
+                    extraLines.append('cert=/%s\n' % os.path.relpath(certManager.certbundles()[0], self.chroot))
                 fobj.write("""[global]
 index-url=%s
-cert=%s
 verbose=true
 timeout=%s
 """ % (self.getCurrentUrl(),
-       '/' + os.path.relpath(certManager.certbundles()[0], self.chroot),
        self.pipTimeout))
+                for line in extraLines:
+                    fobj.write(line)
 
         class DistUtilsConfigureFile(CsmakeServiceConfig):
             def ensure(innerself):
@@ -1697,16 +1725,19 @@ class PypiProxyThread(threading.Thread, SimpleHTTPRequestHandler):
 class SSLCertificateDirectoryConfig(CsmakeServiceConfig):
     def ensure(self):
         certManager = self.manager.getDaemon().getCertificateManager()
-        self.certPath = certManager.getCertPath()
+        self.certPath = certManager.getCARootPath()
         self.certPathDir, self.certPathName = os.path.split(self.certPath)
         self.certInsertPath = os.path.join(
-            self.path,
+            self.fullpath,
             self.certPathName)
-        self._backupAndSetup(self.certInsertPath)
+        self._backupAndSetup(
+            self.certInsertPath,
+            in_chroot=False)
         self.manager.shellout(
             subprocess.check_call,
             ['cp', self.certPath, self.certInsertPath],
             False )
+        certManager.addCertFile(self.certInsertPath)
 
     def update(self):
         pass
@@ -1895,6 +1926,11 @@ class PypiService(CsmakeServiceDaemon):
         return self.certManager
 
     def _setupConfigs(self):
+        self.configManager.register(
+            FauxCertBundleTargetDirectory,
+            ['/'],
+            ensure=True )
+
         #Setup the SSL config management
         if not self.options['no-certroot']:
             self.configManager.register(
@@ -2023,14 +2059,22 @@ class SSLCertificateManager:
         "/usr/lib/python*/dist-packages/pip/_vendor/requests/cacert.pem",
         "/usr/local/lib/python*/dist-packages/pip/_vendor/requests/cacert.pem",
         "/usr/lib/python*/site-packages/pip/_vendor/requests/cacert.pem",
-        "/usr/local/lib/python*/site-packages/pip/_vendor/requests/cacert.pem" ]
+        "/usr/local/lib/python*/site-packages/pip/_vendor/requests/cacert.pem"
+        "/usr/lib/python*/dist-packages/pip/_vendor/certifi/cacert.pem",
+        "/usr/local/lib/python*/dist-packages/pip/_vendor/certifi/cacert.pem",
+        "/usr/lib/python*/site-packages/pip/_vendor/certifi/cacert.pem",
+        "/usr/local/lib/python*/site-packages/pip/_vendor/certifi/cacert.pem" 
+    ]
 
     VENV_CERT_PATHS=[
-        "lib/python*/site-packages/pip/_vendor/requests/cacert.pem" ]
+        "lib/python*/site-packages/pip/_vendor/requests/cacert.pem",
+        "lib/python*/site-packages/pip/_vendor/certifi/cacert.pem" ]
 
+    FAUX_CERT_DIR="__csmake_pypifacade_faux_ca-trust"
     CERT_DIRS=[
         "/etc/pki/ca-trust/source/anchors",
-        "/usr/local/share/ca-certificates" ]
+        "/usr/local/share/ca-certificates",
+        "/" + FAUX_CERT_DIR ]
 
     def __init__(self, module, options):
         self.module = module
@@ -2038,6 +2082,7 @@ class SSLCertificateManager:
         self.options = options
         self._processOptions()
         self.bundles = []
+        self.certFiles = []
         self.rootCACertPath = None
         self.certPath = None
         self.certKeyPath = None
@@ -2048,6 +2093,15 @@ class SSLCertificateManager:
     def removeBundle(self, bundle):
         try:
             self.bundles.remove(bundle)
+        except ValueError as ve:
+            self.log.debug("bundle '%s' not found in bundle list", bundle)
+
+    def addCertFile(self, certFile):
+        self.certFiles.append(certFile)
+
+    def removeCertFile(self, certFile):
+        try:
+            self.bundles.remove(certFile)
         except ValueError as ve:
             self.log.debug("bundle '%s' not found in bundle list", bundle)
 
@@ -2069,7 +2123,7 @@ class SSLCertificateManager:
             and 'certroot-key' not in self.options \
                  and ('certfile' not in self.options \
                       or 'certfile-key' not in self.options):
-            self.log.error("When providing a certroot, you must either provide the root's key (scary), or a relevant certfile and certfile-key (safer) - PypiProvider cannot generate temporary certificates unless certroot-key is provided with certroot")
+            self.log.error("When providing a certroot, you must either provide the root's key (unsafe), or a relevant certfile and certfile-key (safer) - PypiProvider cannot generate temporary certificates unless certroot-key is provided with certroot")
             raise ValueError("Must specify 'certroot-key' or 'certfile' and 'certfile-key' when providing 'certroot'")
 
         if self.options['no-certroot'] \
@@ -2293,6 +2347,9 @@ class SSLCertificateManager:
 
     def certbundles(self):
         return self.bundles
+
+    def certfiles(self):
+        return self.certFiles
 
 class PypiProvider(CsmakeServiceProvider):
     serviceProviders = {}

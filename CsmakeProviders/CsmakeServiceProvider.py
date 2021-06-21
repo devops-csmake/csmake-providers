@@ -1,4 +1,5 @@
 # <copyright>
+# (c) Copyright 2021 Cardinal Peak Technologies
 # (c) Copyright 2017 Hewlett Packard Enterprise Development LP
 #
 # This program is free software: you can redistribute it and/or modify it
@@ -368,75 +369,27 @@ class CsmakeServiceConfig:
 
     def _restoreMovedFiles(self):
         for oldpath, backup, owner, group, permissions, direxisted, dirowner, dirgroup, dirpermissions, restoreInPlace, in_chroot, _ in self.files:
-            olddir, _ = os.path.split(oldpath)
-            chrootpath = oldpath
-            chrootdir = olddir
-            chrootbackup = backup
-            manager = self.manager
-            if in_chroot and self.chroot is not None:
-                chrootpath = self.chroot + oldpath
-                chrootdir = self.chroot + olddir
-                if backup is not None:
-                    chrootbackup = self.chroot + backup
-            if backup is None:
-                self.log.devdebug("No backup exists for: %s", oldpath)
-            else:
-                self.log.devdebug("Backup '%s' exists for: %s", backup, oldpath)
-            if restoreInPlace and self.restore(oldpath, in_chroot):
-                if chrootbackup is not None:
-                    manager.shellout(
-                        subprocess.call,
-                        ['rm', chrootbackup],
-                        False )
-                if owner is not None:
-                    oldowner = owner
-                    if group is not None:
-                        oldowner = "%s:%s" % (oldowner, group)
-                    manager.shellout(
-                        subprocess.call,
-                        ['chown', oldowner, chrootpath],
-                        False )
-                elif group is not None:
-                    manager.shellout(
-                        subprocess.call,
-                        ['chgrp', group, chrootpath],
-                        False )
-                if permissions is not None:
-                    manager.shellout(
-                        subprocess.call,
-                        ['chmod', permissions, chrootpath],
-                        False )
-                if dirowner is not None:
-                    oldowner = dirowner
-                    if dirgroup is not None:
-                        oldowner = "%s:%s" % (oldowner, dirgroup)
-
-                    manager.shellout(
-                        subprocess.call,
-                        ['chown', oldowner, chrootdir],
-                        False )
-                elif dirgroup is not None:
-                    manager.shellout(
-                        subprocess.call,
-                        ['chgrp', dirgroup, chrootdir],
-                        False )
-                if dirpermissions is not None:
-                    manager.shellout(
-                        subprocess.call,
-                        ['chmod', dirpermissions, chrootdir],
-                        False )
-                continue
-            olddir, _ = os.path.split(oldpath)
-            manager.shellout(
-                subprocess.call,
-                ['rm', chrootpath],
-                False )
-            if backup is not None:
-                try:
-                    manager.shellout(
-                        subprocess.check_call,
-                        ['mv', chrootbackup, chrootpath],
-                        False )
+            try:
+                olddir, _ = os.path.split(oldpath)
+                chrootpath = oldpath
+                chrootdir = olddir
+                chrootbackup = backup
+                manager = self.manager
+                if in_chroot and self.chroot is not None:
+                    chrootpath = self.chroot + oldpath
+                    chrootdir = self.chroot + olddir
+                    if backup is not None:
+                        chrootbackup = self.chroot + backup
+                if backup is None:
+                    self.log.devdebug("No backup exists for: %s", oldpath)
+                else:
+                    self.log.devdebug("Backup '%s' exists for: %s", backup, oldpath)
+                if restoreInPlace and self.restore(oldpath, in_chroot):
+                    if chrootbackup is not None:
+                        manager.shellout(
+                            subprocess.call,
+                            ['rm', chrootbackup],
+                            False )
                     if owner is not None:
                         oldowner = owner
                         if group is not None:
@@ -455,40 +408,91 @@ class CsmakeServiceConfig:
                             subprocess.call,
                             ['chmod', permissions, chrootpath],
                             False )
-                except Exception as e:
-                    self.log.warning("The path '%s' couldn't be restored to '%s': %s", backup, oldpath, str(e))
-            if direxisted:
-                if dirowner is not None:
-                    oldowner = dirowner
-                    if dirgroup is not None:
-                        oldowner = "%s:%s" % (oldowner, dirgroup)
+                    if dirowner is not None:
+                        oldowner = dirowner
+                        if dirgroup is not None:
+                            oldowner = "%s:%s" % (oldowner, dirgroup)
 
-                    manager.shellout(
-                        subprocess.call,
-                        ['chown', oldowner, chrootdir],
-                        False )
-                elif dirgroup is not None:
-                    manager.shellout(
-                        subprocess.call,
-                        ['chgrp', dirgroup, chrootdir],
-                        False )
-                if dirpermissions is not None:
-                    manager.shellout(
-                        subprocess.call,
-                        ['chmod', dirpermissions, chrootdir],
-                        False )
-            else:
-                try:
-                    manager.shellout(
-                        subprocess.check_output,
-                        ['rmdir', '-p', chrootdir],
-                        False,
-                        quiet_check=True )
-                except Exception as e:
-                    self.log.devdebug(
-                        "rmdir did not complete - probably ok: %s: %s",
-                        e.__class__.__name__,
-                        str(e) )
+                        manager.shellout(
+                            subprocess.call,
+                            ['chown', oldowner, chrootdir],
+                            False )
+                    elif dirgroup is not None:
+                        manager.shellout(
+                            subprocess.call,
+                            ['chgrp', dirgroup, chrootdir],
+                            False )
+                    if dirpermissions is not None:
+                        manager.shellout(
+                            subprocess.call,
+                            ['chmod', dirpermissions, chrootdir],
+                            False )
+                    continue
+                olddir, _ = os.path.split(oldpath)
+                manager.shellout(
+                    subprocess.check_call,
+                    ['rm', chrootpath],
+                    False )
+                if backup is not None:
+                    try:
+                        manager.shellout(
+                            subprocess.check_call,
+                            ['mv', chrootbackup, chrootpath],
+                            False )
+                        if owner is not None:
+                            oldowner = owner
+                            if group is not None:
+                                oldowner = "%s:%s" % (oldowner, group)
+                            manager.shellout(
+                                subprocess.call,
+                                ['chown', oldowner, chrootpath],
+                                False )
+                        elif group is not None:
+                            manager.shellout(
+                                subprocess.call,
+                                ['chgrp', group, chrootpath],
+                                False )
+                        if permissions is not None:
+                            manager.shellout(
+                                subprocess.call,
+                                ['chmod', permissions, chrootpath],
+                                False )
+                    except Exception as e:
+                        self.log.warning("The path '%s' couldn't be restored to '%s': %s", backup, oldpath, str(e))
+                if direxisted:
+                    if dirowner is not None:
+                        oldowner = dirowner
+                        if dirgroup is not None:
+                            oldowner = "%s:%s" % (oldowner, dirgroup)
+
+                        manager.shellout(
+                            subprocess.call,
+                            ['chown', oldowner, chrootdir],
+                            False )
+                    elif dirgroup is not None:
+                        manager.shellout(
+                            subprocess.call,
+                            ['chgrp', dirgroup, chrootdir],
+                            False )
+                    if dirpermissions is not None:
+                        manager.shellout(
+                            subprocess.call,
+                            ['chmod', dirpermissions, chrootdir],
+                            False )
+                else:
+                    try:
+                        manager.shellout(
+                            subprocess.check_output,
+                            ['rmdir', '-p', chrootdir],
+                            False,
+                            quiet_check=True )
+                    except Exception as e:
+                        self.log.devdebug(
+                            "rmdir did not complete - probably ok: %s: %s",
+                            e.__class__.__name__,
+                            str(e) )
+            except:
+                self.log.exception("Could not restore: %s", oldpath) 
         self.files = []
 
 class CsmakeServiceConfigNotifierTimeout(Exception):
@@ -637,24 +641,33 @@ class CsmakeServiceConfigNotifier(pyinotify.ProcessEvent):
 
     def _processFile(self):
         if os.path.exists(self.actualPath):
-            #The path already exists...don't watch it
-            if self.actualPath in self.instancesEnsured:
+            try:
+                #The path already exists...don't watch it
+                if self.actualPath in self.instancesEnsured:
+                    return True
+                self.manager._ensureInstance(self.actualPath, self.fileinfo)
+                self.instancesEnsured.append(self.actualPath)
+                self._removeWatch()
                 return True
-            self.manager._ensureInstance(self.actualPath, self.fileinfo)
-            self.instancesEnsured.append(self.actualPath)
-            self._removeWatch()
-            return True
+            except:
+                self.log.exception("Configuration instance could not be managed: %s", self.actualPath)
+                return False
 
         #Ensure any matches that already exist
         dirs = glob.glob(self.actualPath)
+        result = False
         for instance in dirs:
-            if instance in self.instancesEnsured:
-                continue
-            self.manager._ensureInstance(
-                instance,
-                self.fileinfo )
-            self.instancesEnsured.append(instance)
-        return False
+            try:
+                if instance in self.instancesEnsured:
+                    continue
+                self.manager._ensureInstance(
+                    instance,
+                    self.fileinfo )
+                self.instancesEnsured.append(instance)
+                result = True
+            except:
+                self.log.exception("Configuration instance could not be managed: %s", instance)
+        return result
 
     def process_IN_CREATE(self, event):
         parent, _ = os.path.split(event.pathname)
