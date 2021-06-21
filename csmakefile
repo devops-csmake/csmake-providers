@@ -1,4 +1,5 @@
 # <copyright>
+# (c) Copyright 2021 Cardinal Peak Technologies
 # (c) Copyright 2017 Hewlett Packard Enterprise Development LP
 #
 # This program is free software: you can redistribute it and/or modify it
@@ -39,7 +40,7 @@ rpm=python-inotify
 
 [metadata@csmake-providers]
 name=csmake-providers
-version=1.3.34
+version=1.3.36
 description=modules to support using various remote sources with builds
 about=Git, tar, etc is used in a lot of ways in building product.  This
  package is intended to support usage of git, svn, swift, scp, etc.
@@ -136,6 +137,10 @@ signers=default-signature
 [command@]
 description=By default, csmake will test and package csmake-providers
 0000=csmake-providers, test, debian-csmake-providers & rpm-csmake-providers
+
+[command@skip-testing]
+description=Skip testing and just build
+0000=csmake-providers, debian-csmake-providers & rpm-csmake-providers
 
 ####################################3
 # Test sections
