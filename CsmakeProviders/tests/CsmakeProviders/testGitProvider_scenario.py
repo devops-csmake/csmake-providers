@@ -74,7 +74,7 @@ class testGitProvider_scenario(unittest.TestCase):
         if shalist is None:
             self.assertTrue(False)
             return
-        for branch, index in self.shaindex.iteritems():
+        for branch, index in self.shaindex.items():
             self.shadict[branch] = shalist[index].strip()
 
     def test_basicFetch(self):
@@ -530,7 +530,7 @@ class testGitProvider_scenario(unittest.TestCase):
             self.shadict['A'],
             self.shadict['B'] )
 
-        print "Parent result: ", result
+        print("Parent result: ", result)
 
         self.assertEqual(result['type'], 'parent')
         self.assertEqual(len(result['history']), 1)
@@ -568,8 +568,8 @@ class testGitProvider_scenario(unittest.TestCase):
             self.shadict['B'],
             True )
 
-        print "Another parent result: ", result
-        print result['history'][0]['refs']
+        print("Another parent result: ", result)
+        print(result['history'][0]['refs'])
         self.assertEqual(result['type'], 'parent')
         self.assertEqual(len(result['history']), 1)
         self.assertTrue(result['history'][0]['summary'].startswith('B:'))
@@ -600,7 +600,7 @@ class testGitProvider_scenario(unittest.TestCase):
             self.shadict['E'] )
 
 
-        print "Another parent result: ", result
+        print("Another parent result: ", result)
         self.assertEqual(result['type'], 'parent')
         self.assertEqual(len(result['history']), 4)
         self.assertTrue(result['history'][-1]['summary'].startswith('B:'))
@@ -630,7 +630,7 @@ class testGitProvider_scenario(unittest.TestCase):
             self.shadict["E'A:OrphanA"],
             True )
 
-        print "different_tree result: ", result
+        print("different_tree result: ", result)
 
         self.assertEqual(result['type'], 'different_tree')
         self.assertEqual(len(result['history']), 0)
@@ -662,8 +662,8 @@ class testGitProvider_scenario(unittest.TestCase):
             self.shadict['E'],
             self.shadict['D:BranchA'] )
 
-        print "diverged result: ", result
-        print result['common']
+        print("diverged result: ", result)
+        print(result['common'])
         self.assertEqual(result['type'], 'diverged')
         self.assertEqual(len(result['history']), 0)
         self.assertTrue(result['old']['summary'].startswith('E:'))

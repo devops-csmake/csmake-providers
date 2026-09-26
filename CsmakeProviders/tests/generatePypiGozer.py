@@ -35,7 +35,7 @@
 #   PYTHONPATH=..:
 import PypiProvider
 import pickle
-import urllib2
+import urllib.request
 import os.path
 import logging
 
@@ -64,7 +64,7 @@ for link, _ in links:
     plt.start()
     plt.join()
     packageurl, packagelinks = plt.getLinks()
-    print packageurl, packagelinks
+    print(packageurl, packagelinks)
     packagefiles = []
     for packagelink, _ in packagelinks:
         path, filename = os.path.split(packagelink)
@@ -75,23 +75,23 @@ for link, _ in links:
         continue
 
     for filename in packagefiles:
-        print "Processing file: ", filename
+        print("Processing file: ", filename)
         try:
             result = fakectxt._splitPypiName(filename, {})
         except ValueError as e:
             if package not in outliers:
                 outliers[package] = []
-            print "outlier: ", str(e)
+            print("outlier: ", str(e))
             outliers[package].append((filename, str(e)))
             continue
-        print filename
-        print result
+        print(filename)
+        print(result)
         if package not in pypiDict:
             pypiDict[package] = []
         pypiDict[package].append( (filename, result) )
 
-print "pypiDict = ", str(pypiDict)
-print "outliers = ", str(outliers)
+print("pypiDict = ", str(pypiDict))
+print("outliers = ", str(outliers))
 with open("gozer.pickle", "wb") as p:
     pickle.dump(pypiDict, p)
  

@@ -79,7 +79,7 @@ class GitProvider:
             parts,
             [sha, ref, refs, record.message, record.summary, record.author, dt]))
 
-        result['author'] = unicode(result['author'])
+        result['author'] = str(result['author'])
         return result
 
     @staticmethod
@@ -292,8 +292,13 @@ class GitProvider:
             config.set_value("http", "postBuffer", "1048576000")
         finally:
             if config is not None:
-                config.write()
-                del config
+                # NOTE: GitPython's GitConfigParser relies on __del__ to flush
+                # and release its write lock, but that only happened
+                # deterministically under Python 2's reference counting.
+                # Under Python 3, __del__ timing is not guaranteed, so the
+                # lock must be released explicitly here (release() also
+                # flushes any pending writes).
+                config.release()
 
         if repo.is_dirty(True, True, True):
             log.error("GIT REPO REQUESTED *HAS UNCOMMITTED CHANGES")

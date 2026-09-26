@@ -71,8 +71,8 @@ class GitTagRefs(CsmakeModule):
     REQUIRED_OPTIONS = ['files', 'tag']
 
     def _processCsversionSources(self, sources, gitrefs):
-        for source, build in sources.iteritems():
-            for buildname, data in build.iteritems():
+        for source, build in sources.items():
+            for buildname, data in build.items():
                 if data[0] == 'git':
                     if source not in gitrefs:
                         gitrefs[source] = {}
@@ -83,8 +83,8 @@ class GitTagRefs(CsmakeModule):
 
     def _createGitTagList(self, gitrefs):
         taglist = []
-        for source, urldict in gitrefs.iteritems():
-            for url, entries in urldict.iteritems():
+        for source, urldict in gitrefs.items():
+            for url, entries in urldict.items():
                 leadref = entries[0][0]['REF']
                 for entry in entries:
                     if self.multiref:

@@ -84,7 +84,7 @@ class CsmakeServiceChangeFilePrivs:
             statout = self.manager.shellout(
                 subprocess.check_output,
                 ['stat', '--printf', '%a %u %g', self.path] )
-            statparts = statout.split()
+            statparts = statout.decode().split()
             self.oldpermissions=statparts[0]
             self.oldowner=statparts[1]
             self.oldgroup=statparts[2]
@@ -776,7 +776,7 @@ class CsmakeServiceConfigManager(threading.Thread):
         self.clean()
 
     def clean(self):
-        for key, value in self.typeToObjs.iteritems():
+        for key, value in self.typeToObjs.items():
             for config in value:
                 try:
                     config.clean()
@@ -1058,9 +1058,9 @@ class CsmakePortManager:
         if sockethandler is not None:
             sock = sockethandler(sock)
         lockfile = clazz._lock(log)
-        if isinstance(start, basestring):
+        if isinstance(start, str):
             start = int(start)
-        if isinstance(stop, basestring):
+        if isinstance(stop, str):
             stop = int(stop)
         try:
             for port in range(start, stop+1):
@@ -1091,7 +1091,7 @@ class CsmakePortManager:
     def getUserPortRange(clazz, log):
         ports = subprocess.check_output(
             ['cat', '/proc/sys/net/ipv4/ip_local_port_range'] )
-        portparts = ports.split()
+        portparts = ports.decode().split()
         return portparts
 
     def __init__(self, interface, port, sock, log, sockethandler):
@@ -1322,7 +1322,7 @@ class CsmakeServiceProvider:
         self.service = None
         try:
             if 'port' in self.options and self.options['port'] is not None \
-               and not isinstance(self.options['port'], basestring):
+               and not isinstance(self.options['port'], str):
                 self.options['port'].cleanup()
         except Exception as e:
             self.module.log.debug("Attempt to free port object failed: %s", str(e))

@@ -35,7 +35,7 @@
 #   PYTHONPATH=..:
 import PypiProvider
 import pickle
-import urllib2
+import urllib.request
 import os.path
 import logging
 
@@ -80,12 +80,12 @@ for link, _ in links:
                 outliers[package] = []
             outliers[package].append((filename, str(e)))
             continue
-        print filename
-        print result
+        print(filename)
+        print(result)
         if package not in pypiDict:
             pypiDict[package] = []
         pypiDict[package].append( (filename, result) )
 
-print "pypiDict = ", repr(pypiDict)
-print "outliers = ", repr(outliers)
+print("pypiDict = ", repr(pypiDict))
+print("outliers = ", repr(outliers))
  

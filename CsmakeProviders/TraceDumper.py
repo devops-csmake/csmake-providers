@@ -107,7 +107,7 @@ class TraceDumper(threading.Thread):
             pass
     
     def stacktraces(self):
-        fout = file(self.fpath,"wb+")
+        fout = open(self.fpath, "w+")
         try:
             fout.write(stacktraces())
         finally:

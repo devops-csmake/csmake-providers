@@ -22,24 +22,32 @@ import subprocess
 import os
 import os.path
 import stat
-import urllib2
-import urlparse
+import urllib.request
+import urllib.parse
 import re
 import random
 import glob
 import getpass
 import time
-import StringIO
+import io
 import shutil
 import logging
 import sys
 import tempfile
 import functools
-from SimpleHTTPServer import SimpleHTTPRequestHandler
-from urllib2 import HTTPError
-from CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceDaemon
-from CsmakeServiceProvider import CsmakeServiceConfigManager
-from CsmakeServiceProvider import CsmakeServiceConfig
+from http.server import SimpleHTTPRequestHandler
+from urllib.error import HTTPError
+try:
+    # Imported as part of the CsmakeProviders package (production usage)
+    from .CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceDaemon
+    from .CsmakeServiceProvider import CsmakeServiceConfigManager
+    from .CsmakeServiceProvider import CsmakeServiceConfig
+except ImportError:
+    # Imported as a flat top-level module (e.g. by the test harness, which
+    # runs with CsmakeProviders/ itself on sys.path)
+    from CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceDaemon
+    from CsmakeServiceProvider import CsmakeServiceConfigManager
+    from CsmakeServiceProvider import CsmakeServiceConfig
 #PYPA packages
 from packaging import version
 from packaging import specifiers
@@ -73,7 +81,7 @@ class PullLinksThread(threading.Thread):
     def getLinks(self):
         #Reraise the exception
         if self.exc_info is not None:
-            raise self.exc_info[0], self.exc_info[1], self.exc_info[2]
+            raise self.exc_info[1].with_traceback(self.exc_info[2])
         else:
             return (self.url, self.links)
 
@@ -90,7 +98,7 @@ class PullLinksThread(threading.Thread):
             url = originalurl
             if url[-1] != '/':
                 url += '/'
-            url = urlparse.urljoin(url, path)
+            url = urllib.parse.urljoin(url, path)
             if url[-1] != '/':
                 url += '/'
 
@@ -98,7 +106,7 @@ class PullLinksThread(threading.Thread):
             self.links = []
 
             try:
-                fd = urllib2.urlopen(url)
+                fd = urllib.request.urlopen(url)
             except:
                 self.exc_info = sys.exc_info()
                 continue
@@ -130,7 +138,7 @@ class PullLinksThread(threading.Thread):
                     continue
                 linkmatch = match.group('link')
                 if linkmatch is not None:
-                    linkmatch = urllib2.unquote(linkmatch)
+                    linkmatch = urllib.parse.unquote(linkmatch)
                 self.links.append((linkmatch, link[1]))
             break
         return success
@@ -174,7 +182,7 @@ class PypiContext:
     #  Useful for initiating transfers without a real client
     class NullHTTPHandler:
         def __init__(self):
-            self.wfile = StringIO.StringIO()
+            self.wfile = io.BytesIO()
 
         def send_header(self, header, value):
             pass
@@ -789,8 +797,8 @@ class PypiContext:
             result['package'] = packageName
             numpossibledashes = packageName.count('-') + 1
             while numpossibledashes:
-            	proposedPackage = self._normalizePackageName(
-                	'-'.join(dashparts[:numpossibledashes]))
+                proposedPackage = self._normalizePackageName(
+                    '-'.join(dashparts[:numpossibledashes]))
                 if proposedPackage != packageName:
                     numpossibledashes = numpossibledashes - 1
                 else:
@@ -883,7 +891,7 @@ class PypiContext:
             self.indicies.extend(indicies)
 
     def _startStandardHTMLPage(self, pagename):
-        page = StringIO.StringIO()
+        page = io.StringIO()
         page.write('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
         page.write("<html>\n<title>csmake PyPI Proxy</title>\n")
         page.write("<body>\n<h2>csmake PyPI Proxy: %s</h2>\n" % pagename)
@@ -891,17 +899,17 @@ class PypiContext:
 
     def _sendStandardHTMLPage(self, page, handler):
         page.write("</body>\n</html>\n")
-        length = page.tell()
-        page.seek(0)
+        content = page.getvalue().encode('utf-8')
+        length = len(content)
         handler.send_response(200)
         handler.send_header("Content-type", "text/html")
         handler.send_header("Content-Length", str(length))
         handler.end_headers()
-        shutil.copyfileobj(page, handler.wfile)
+        handler.wfile.write(content)
         page.close()
 
     def _isaBacklink(self, url, link):
-        rellink = os.path.relpath(urlparse.urljoin(url,link),url)
+        rellink = os.path.relpath(urllib.parse.urljoin(url,link),url)
         self.log.devdebug("'%s' is the relative path", rellink)
         self.log.devdebug("'%s' url - '%s' link", url, link)
         self.log.devdebug("url: %s", url)
@@ -956,7 +964,7 @@ class PypiContext:
                 self.controller.unlockPackageList()
         page = self._startStandardHTMLPage(
             'Available packages in context: %s' % self.name)
-        for package in packageCache.keys():
+        for package in list(packageCache.keys()):
             page.write('<p><a href="%s/">%s</a></p>\n' % (package, package))
         self._sendStandardHTMLPage(page, handler)
         return True
@@ -1080,14 +1088,14 @@ class PypiContext:
                 #so we have to find and split out any fragment here as well
                 linkpart = link[0].split('#')[0]
                 abspart = ''
-                parsed = urlparse.urlsplit(linkpart)
+                parsed = urllib.parse.urlsplit(linkpart)
                 if len(parsed.scheme) > 0:
                     linkparts = linkpart.split('/',3)
                     linkpart = linkparts[-1]
                     abspart = '/'.join(linkparts[:-1])
-                fulllink = urlparse.urljoin(
+                fulllink = urllib.parse.urljoin(
                     url,
-                    abspart + '/' + urllib2.quote(linkpart) )
+                    abspart + '/' + urllib.parse.quote(linkpart) )
 
                 if filesplit['filename'] not in packageCache[package][0]:
                     packageCache[package][0][filesplit['filename']] = [
@@ -1113,7 +1121,7 @@ class PypiContext:
             'Files available for "%s" in context: %s' % (
                 package,
                 self.name ) )
-        versions = packageCache[package][1].keys()
+        versions = list(packageCache[package][1].keys())
         self.log.devdebug(
             "Current constraints: %s", str(self.constraints))
         if package in self.constraints:
@@ -1128,9 +1136,9 @@ class PypiContext:
                 str(versions),
                 str(pkglimits) )
         for version in versions:
-            for filename, entry in packageCache[package][1][version].iteritems():
+            for filename, entry in packageCache[package][1][version].items():
                 page.write('<p><a href="%s%s">%s</a></p>\n' % (
-                    urllib2.quote(filename),
+                    urllib.parse.quote(filename),
                     entry[1]['fragment'],
                     filename))
         self._sendStandardHTMLPage(page, handler)
@@ -1140,7 +1148,7 @@ class PypiContext:
         #TODO: Limit availability of package if no active indicies
         #      appear in the list for the file
         package = self._normalizePackageName(package)
-        filename = urllib2.unquote(filename)
+        filename = urllib.parse.unquote(filename)
         packageCache, services = self.controller.getPypiImage()
         listVersionsCalled = False
         if package not in packageCache:
@@ -1166,7 +1174,7 @@ class PypiContext:
         if filepath:
             self.log.devdebug("Attempting to pull file from cache: %s", filepath)
             try:
-                with open(filepath) as readfd:
+                with open(filepath, 'rb') as readfd:
                     readfd.seek(0,2)
                     length = readfd.tell()
                     readfd.seek(0)
@@ -1225,12 +1233,12 @@ class PypiContext:
                         cachefilepath = os.path.join(
                             cachepackagepath,
                             filename )
-                        cachefd = open(cachefilepath, 'w')
+                        cachefd = open(cachefilepath, 'wb')
                 except:
                     self.log.exception("Attempt to use cache at %s, failed", cachepath)
                     cachefilepath = None
                 try:
-                    netfd = urllib2.urlopen(path)
+                    netfd = urllib.request.urlopen(path)
                     netinfo = netfd.info()
                     handler.send_response(200)
                     handler.send_header("Content-type", netinfo.gettype())
@@ -1398,7 +1406,7 @@ class PypiController:
             initialContext.listPackages(nullhandler)
             #TODO: Speed this up dramatically with threading
             #      Need to make listVersions threadsafe first.
-            newPackages = self.proxyPypiImage.keys()
+            newPackages = list(self.proxyPypiImage.keys())
             numPackages = len(newPackages)
             packagesCompleted = 0
             for package in newPackages:
@@ -1410,7 +1418,7 @@ class PypiController:
                         packagesCompleted,
                         numPackages )
             constraintList=[]
-            for package, image in self.proxyPypiImage.iteritems():
+            for package, image in self.proxyPypiImage.items():
                 versions = [str(x) for x in image[1].keys()]
                 if len(versions) == 0:
                     continue
@@ -1916,7 +1924,7 @@ class PypiService(CsmakeServiceDaemon):
         self.accepting = False
         ciphers = subprocess.check_output(
             ['openssl', 'ciphers'])
-        self.ciphers = ciphers.strip()
+        self.ciphers = ciphers.decode().strip()
         #options['cabundle'] = clazz.certhandler.certbundles()[0]
 
     def getController(self):
@@ -2039,7 +2047,7 @@ class PypiService(CsmakeServiceDaemon):
         address = self.port.address()
         if self.accepting:
             try:
-                urllib2.urlopen(
+                urllib.request.urlopen(
                     "https://%s:%s/xyzzy/xzyyzl33t/...shuttingdownthefacade..." % address,
                     timeout=1)
             except:
@@ -2357,7 +2365,7 @@ class PypiProvider(CsmakeServiceProvider):
     def __init__(self, module, tag, **options):
         ciphers = subprocess.check_output(
             ['openssl', 'ciphers'])
-        self.ciphers = ciphers.strip()
+        self.ciphers = ciphers.decode().strip()
         CsmakeServiceProvider.__init__(self, module, tag, **options)
         self.serviceClass = PypiService
 

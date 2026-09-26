@@ -34,12 +34,21 @@ import threading
 import subprocess
 import os.path
 import time
-from CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceConfig
-from CsmakeServiceProvider import CsmakeServiceDaemon
-from CsmakeServiceProvider import CsmakeServiceConfigManager
-from CsmakeServiceProvider import CsmakeServiceChangeFilePrivs
-import BaseHTTPServer
-import SimpleHTTPServer
+try:
+    # Imported as part of the CsmakeProviders package (production usage)
+    from .CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceConfig
+    from .CsmakeServiceProvider import CsmakeServiceDaemon
+    from .CsmakeServiceProvider import CsmakeServiceConfigManager
+    from .CsmakeServiceProvider import CsmakeServiceChangeFilePrivs
+except ImportError:
+    # Imported as a flat top-level module (e.g. by the test harness, which
+    # runs with CsmakeProviders/ itself on sys.path)
+    from CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceConfig
+    from CsmakeServiceProvider import CsmakeServiceDaemon
+    from CsmakeServiceProvider import CsmakeServiceConfigManager
+    from CsmakeServiceProvider import CsmakeServiceChangeFilePrivs
+import http.server as BaseHTTPServer
+import http.server as SimpleHTTPServer
 
 
 class VirtualPathHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):

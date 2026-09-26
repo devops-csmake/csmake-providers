@@ -36,12 +36,13 @@ import unittest
 import git
 import subprocess
 import PypiProvider
-import BaseHTTPServer
-import SimpleHTTPServer
+import http.server as BaseHTTPServer
+import http.server as SimpleHTTPServer
 import threading
 import shutil
-import urllib2
-import urlparse
+import urllib.request
+import urllib.error
+import urllib.parse as urlparse
 import subprocess
 import logging
 import sys
@@ -49,10 +50,10 @@ import time
 import TraceDumper
 import ssl
 import glob
-import cgi
-import urllib
-from ConfigParser import RawConfigParser
-from StringIO import StringIO
+import html
+import urllib.parse as urllib
+from configparser import RawConfigParser
+from io import StringIO
 
 TraceDumper.trace_start("trace.html")
 
@@ -515,7 +516,7 @@ class testPypiProvider_basic(unittest.TestCase):
     def test_basicVersionMatchSanity(self):
         canon = self._canonicalTestNames()
         for name, expected, method in canon:
-            print "Testing: ", name
+            print("Testing: ", name)
             result = self._newVersionResult()
             dashes = name.split('-')
             heuristics = PypiProvider.PypiContext._SplitHeuristics(
@@ -525,7 +526,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 {},
                 self.csmake_test.log )
             self.assertTrue(getattr(heuristics,method)())
-            for key, value in expected.iteritems():
+            for key, value in expected.items():
                 self.assertEqual(result[key], value)
 
     def test_filenameSplitCanon(self):
@@ -538,13 +539,13 @@ class testPypiProvider_basic(unittest.TestCase):
                 if ext in PypiProvider.PypiContext.WHEEL_EXTENSIONS:
                     ext = '-all-none-something' + ext
                 filename = name + ext
-                print "Testing: ", filename
+                print("Testing: ", filename)
                 result = testcontext._splitPypiName(filename, {}, None)
-                for key, value in expected.iteritems():
+                for key, value in expected.items():
                     self.assertEqual(result[key], value)
-                print "     with package name"
+                print("     with package name")
                 result = testcontext._splitPypiName(filename, {}, expected['package'])
-                for key, value in expected.iteritems():
+                for key, value in expected.items():
                     if key == 'heuristic':
                         #It's possible that supplying the package name
                         #Just took this from a hard to an easy problem
@@ -565,9 +566,9 @@ class testPypiProvider_basic(unittest.TestCase):
                 if ext in PypiProvider.PypiContext.WHEEL_EXTENSIONS:
                     ext = '-all-none-something' + ext
                 filename = name + ext
-                print "Testing: ", filename
+                print("Testing: ", filename)
                 result = testcontext._splitPypiName(filename, {}, None)
-                for key, value in expected.iteritems():
+                for key, value in expected.items():
                     self.assertEqual(result[key], value)
                 result = testcontext._splitPypiName(filename, {}, expected['package'])
 
@@ -623,7 +624,7 @@ class testPypiProvider_basic(unittest.TestCase):
                     return None
                 list.sort(key=lambda a: a.lower())
                 f = StringIO()
-                displaypath = cgi.escape(urllib.unquote(self.path))
+                displaypath = html.escape(urllib.unquote(self.path))
                 f.write('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
                 f.write("<html>\n<title>Directory listing for %s</title>\n" % displaypath)
                 f.write("<body>\n<h2>Directory listing for %s</h2>\n" % displaypath)
@@ -639,7 +640,7 @@ class testPypiProvider_basic(unittest.TestCase):
                         displayname = name + "@"
                         # Note: a link to a directory displays with @ and links with /
                     f.write('<li><a href="%s%s">%s</a>\n'
-                            % (urllib.quote(linkname), suffix, cgi.escape(displayname)))
+                            % (urllib.quote(linkname), suffix, html.escape(displayname)))
                 f.write("</ul>\n<hr>\n</body>\n</html>\n")
                 length = f.tell()
                 f.seek(0)
@@ -679,6 +680,9 @@ class testPypiProvider_basic(unittest.TestCase):
 
     def _fishLinksIntoList(self, page):
         self.csmake_test.log.debug('Fishing links from: %s', page)
+        if isinstance(page, bytes):
+            # urlopen().read() always returns bytes in Python 3
+            page = page.decode()
         parts = page.split('<a ')[1:]
         files = []
         for part in parts:
@@ -751,7 +755,7 @@ class testPypiProvider_basic(unittest.TestCase):
 
             #Try getting the index for pip
             #TODO: Need to add cert??
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest'),
                 cafile=chrootcert)
             data = indexresult.read()
@@ -762,14 +766,14 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedPackages.remove(package)
                 except:
-                    print "Package '%s' unexpected" % package
+                    print("Package '%s' unexpected" % package)
                     unexpectedFound = True
             self.assertFalse(unexpectedFound)
             if len(expectedPackages) != 0:
-                print "Packages not retrieved: ", expectedPackages
+                print("Packages not retrieved: ", expectedPackages)
 
             self.assertEqual(len(expectedPackages), 0)
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/pip'),
                 cafile=chrootcert)
             data = indexresult.read()
@@ -789,42 +793,42 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
             self.assertEqual(len(expectedFiles),0)
 
-            fileresult = urllib2.urlopen(
+            fileresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/pip/pip-6.1.1-py2.py3-none-any.whl'),
                 cafile=chrootcert)
             md5sum = self.csmake_test._fileMD5(fileresult)
             fileresult.close()
 
-            with open(os.path.join(path,"pypi-99:99:01/pip/pip-6.1.1-py2.py3-none-any.whl")) as testfile:
+            with open(os.path.join(path,"pypi-99:99:01/pip/pip-6.1.1-py2.py3-none-any.whl"), 'rb') as testfile:
                 testmd5sum = self.csmake_test._fileMD5(testfile)
             self.assertEqual(md5sum, testmd5sum)
 
             cachedpip = os.path.join(cache, "pip/pip-6.1.1-py2.py3-none-any.whl")
 
-            with open(cachedpip) as cachefile:
+            with open(cachedpip, 'rb') as cachefile:
                 cachemd5sum = self.csmake_test._fileMD5(cachefile)
             self.assertEqual(testmd5sum, cachemd5sum)
 
-            with open(cachedpip, 'w') as cachefile:
-                cachefile.write("My dog has fleas")
+            with open(cachedpip, 'wb') as cachefile:
+                cachefile.write(b"My dog has fleas")
 
-            fileresult = urllib2.urlopen(
+            fileresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/pip/pip-6.1.1-py2.py3-none-any.whl'),
                 cafile=chrootcert)
             md5sum = self.csmake_test._fileMD5(fileresult)
             fileresult.close()
 
-            with open(cachedpip) as cachefile:
+            with open(cachedpip, 'rb') as cachefile:
                 cachemd5sum = self.csmake_test._fileMD5(cachefile)
 
             self.assertEqual(md5sum, cachemd5sum)
@@ -849,7 +853,7 @@ class testPypiProvider_basic(unittest.TestCase):
             self.assertTrue(parser.has_option('global', 'cert'))
             self.assertEqual(parser.get('global','cert'),certpath)
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'rad/pip'),
                 cafile=chrootcert)
             data = indexresult.read()
@@ -869,17 +873,17 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
             self.assertEqual(len(expectedFiles),0)
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/pip'),
                 cafile=chrootcert)
             data = indexresult.read()
@@ -899,11 +903,11 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
@@ -934,7 +938,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 self._stopTestPypiServer()
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             result = subprocess.call(['sudo', 'rm', '-r', cache], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
@@ -999,7 +1003,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 'reset':'python-monascaclient',
                 'constraints':'python-monascaclient~=1.0.21'})
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/python_monascaclient'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1012,7 +1016,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 'python-monascaclient-1.0.18.tar.gz',
                 'python-monascaclient-1.0.19.tar.gz',
                 'python_monascaclient-1.0.18-py2.py3-none-any.whl',
-                urllib2.quote('python_monascaclient-1.0.21+HPCS9.0-py2.py3-none-any.whl'),
+                urllib.quote('python_monascaclient-1.0.21+HPCS9.0-py2.py3-none-any.whl'),
                 'python_monascaclient-1.0.21-py2.py3-none-any.whl',
                 'python_monascaclient-2015.1-py2.py3-none-any.whl' ]
 
@@ -1022,17 +1026,17 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedfiles.remove(link)
                 except:
-                    print "File '%s' unexpected" % link
+                    print("File '%s' unexpected" % link)
                     unexpectedFound = True
 
             if len(expectedfiles) != 0:
-                print "Files not retrieved: ", expectedfiles
+                print("Files not retrieved: ", expectedfiles)
 
             self.assertFalse(unexpectedFound)
 
             self.assertEqual(len(expectedfiles),0)
 
-            fileresult = urllib2.urlopen(
+            fileresult = urllib.request.urlopen(
                 urlparse.urljoin(
                     facadeurl,
                     'mytest/python_monascaclient/python_monascaclient-1.0.21%2BHPCS9.0-py2.py3-none-any.whl'),
@@ -1040,11 +1044,11 @@ class testPypiProvider_basic(unittest.TestCase):
             md5sum = self.csmake_test._fileMD5(fileresult)
             fileresult.close()
 
-            with open(os.path.join(path,"pypi-99:99:03/python_monascaclient/python_monascaclient-1.0.21+HPCS9.0-py2.py3-none-any.whl")) as testfile:
+            with open(os.path.join(path,"pypi-99:99:03/python_monascaclient/python_monascaclient-1.0.21+HPCS9.0-py2.py3-none-any.whl"), 'rb') as testfile:
                 testmd5sum = self.csmake_test._fileMD5(testfile)
             self.assertEqual(md5sum, testmd5sum)
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'limited/python_monascaclient'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1054,7 +1058,7 @@ class testPypiProvider_basic(unittest.TestCase):
             #There could be other files (the 6.1.1 tar.gz is in the pip
             #  02 mirror for example.
             expectedfiles = [
-                urllib2.quote('python_monascaclient-1.0.21+HPCS9.0-py2.py3-none-any.whl'),
+                urllib.quote('python_monascaclient-1.0.21+HPCS9.0-py2.py3-none-any.whl'),
                 'python_monascaclient-1.0.21-py2.py3-none-any.whl' ]
 
             unexpectedFound = False
@@ -1063,11 +1067,11 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedfiles.remove(link)
                 except:
-                    print "File '%s' unexpected" % link
+                    print("File '%s' unexpected" % link)
                     unexpectedFound = True
 
             if len(expectedfiles) != 0:
-                print "Files not retrieved: ", expectedfiles
+                print("Files not retrieved: ", expectedfiles)
 
             self.assertFalse(unexpectedFound)
 
@@ -1082,7 +1086,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 self._stopTestPypiServer()
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             result = subprocess.call(['sudo', 'rm', '-r', cache], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
@@ -1141,7 +1145,7 @@ class testPypiProvider_basic(unittest.TestCase):
             service.startService()
             controller = service.getController()
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1152,14 +1156,14 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedPackages.remove(package)
                 except:
-                    print "Package '%s' unexpected" % package
+                    print("Package '%s' unexpected" % package)
                     unexpectedFound = True
             self.assertFalse(unexpectedFound)
             if len(expectedPackages) != 0:
-                print "Packages not retrieved: ", expectedPackages
+                print("Packages not retrieved: ", expectedPackages)
 
             self.assertEqual(len(expectedPackages), 0)
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/pip'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1177,24 +1181,24 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
             self.assertEqual(len(expectedFiles),0)
 
-            fileresult = urllib2.urlopen(
+            fileresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/pip/pip-6.1.1-py2.py3-none-any.whl'),
                 cafile=chrootcert )
             md5sum = self.csmake_test._fileMD5(fileresult)
             fileresult.close()
 
             cachedpip = os.path.join(cache, "pip/pip-6.1.1-py2.py3-none-any.whl")
-            with open(cachedpip) as cachefile:
+            with open(cachedpip, 'rb') as cachefile:
                 cachemd5sum = self.csmake_test._fileMD5(cachefile)
 
             self.assertEqual(md5sum, cachemd5sum)
@@ -1209,7 +1213,7 @@ class testPypiProvider_basic(unittest.TestCase):
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
 
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
             self.assertEqual(result, 0)
@@ -1271,7 +1275,7 @@ class testPypiProvider_basic(unittest.TestCase):
             service.startService()
             controller = service.getController()
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1282,15 +1286,15 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedPackages.remove(package)
                 except:
-                    print "Package '%s' unexpected" % package
+                    print("Package '%s' unexpected" % package)
                     unexpectedFound = True
             self.assertFalse(unexpectedFound)
             if len(expectedPackages) != 0:
-                print "Packages not retrieved: ", expectedPackages
+                print("Packages not retrieved: ", expectedPackages)
 
             self.assertEqual(len(expectedPackages), 0)
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/leon'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1309,17 +1313,17 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
             self.assertEqual(len(expectedFiles),0)
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/pip'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1337,11 +1341,11 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
@@ -1354,7 +1358,7 @@ class testPypiProvider_basic(unittest.TestCase):
             controller.pushCurrentContext('rad')
             self.assertEqual(controller.getCurrentContext(), 'rad')
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'rad/pip'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1374,17 +1378,17 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
             self.assertEqual(len(expectedFiles),0)
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'rad/azure'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1400,7 +1404,7 @@ class testPypiProvider_basic(unittest.TestCase):
             controller.pushCurrentContext('child')
             self.assertEqual(controller.getCurrentContext(), 'child')
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'child/pip/'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1416,17 +1420,17 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
             self.assertEqual(len(expectedFiles),0)
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'child/azure'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1442,11 +1446,11 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
@@ -1493,7 +1497,7 @@ class testPypiProvider_basic(unittest.TestCase):
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
 
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
             self.assertEqual(result, 0)
@@ -1552,7 +1556,7 @@ class testPypiProvider_basic(unittest.TestCase):
             controller = service.getController()
 
             #Check that we can request a file out of the chute.
-            fileresult = urllib2.urlopen(
+            fileresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/azure/azure-0.10.0.zip'),
                 cafile=chrootcert )
 
@@ -1560,13 +1564,13 @@ class testPypiProvider_basic(unittest.TestCase):
             fileresult.close()
             with open(os.path.join(
                    path,
-                   'pypi-99:99:01/azure/azure-0.10.0.zip')) as pypifile:
+                   'pypi-99:99:01/azure/azure-0.10.0.zip'), 'rb') as pypifile:
                 pypimd5sum = self.csmake_test._fileMD5(pypifile)
             self.assertEqual(md5sum, pypimd5sum)
 
             #Now, check that we can request a file where the index
             # has been pulled from one repository and the file's not there
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/pip'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1585,11 +1589,11 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
@@ -1597,7 +1601,7 @@ class testPypiProvider_basic(unittest.TestCase):
 
             controller.registerContext('newerpip', {
                 'indicies':'http://localhost:%d/pypi-99:99:02' % pypiport } )
-            fileresult = urllib2.urlopen(
+            fileresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'newerpip/pip/pip-7.0.3.tar.gz'),
                 cafile=chrootcert )
 
@@ -1605,7 +1609,7 @@ class testPypiProvider_basic(unittest.TestCase):
             fileresult.close()
             with open(os.path.join(
                    path,
-                   'pypi-99:99:02/pip/pip-7.0.3.tar.gz')) as pypifile:
+                   'pypi-99:99:02/pip/pip-7.0.3.tar.gz'), 'rb') as pypifile:
                 pypimd5sum = self.csmake_test._fileMD5(pypifile)
             self.assertEqual(md5sum, pypimd5sum)
 
@@ -1618,7 +1622,7 @@ class testPypiProvider_basic(unittest.TestCase):
 
             #Now, check that we can request a file where the index
             # has been pulled from one repository and the file's not there
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'olderpip/pip'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1637,11 +1641,11 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedFiles.remove(filename)
                 except:
-                    print "File '%s' unexpected" % filename
+                    print("File '%s' unexpected" % filename)
                     unexpectedFound = True
 
             if len(expectedFiles) != 0:
-                print "Files not retrieved: ", expectedFiles
+                print("Files not retrieved: ", expectedFiles)
 
             self.assertFalse(unexpectedFound)
 
@@ -1656,7 +1660,7 @@ class testPypiProvider_basic(unittest.TestCase):
             #       exists.
             """
             try:
-                fileresult = urllib2.urlopen(
+                fileresult = urllib.request.urlopen(
                     urlparse.urljoin(facadeurl, 'olderpip/pip/pip-7.0.3.tar.gz'),
                     cafile=chrootcert )
                 self.csmake_test.log.error("pip 7 should not be accessible")
@@ -1665,7 +1669,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 buf = buf[:min(100,len(buf))]
                 self.csmake_test.log.debug(buf)
                 self.assertTrue(False)
-            except urllib2.HTTPError:
+            except urllib.error.HTTPError:
                 pass
             except:
                 self.csmake_test.log.exception("We didn't get an HTTPError...")
@@ -1682,7 +1686,7 @@ class testPypiProvider_basic(unittest.TestCase):
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
 
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
             self.assertEqual(result, 0)
@@ -1747,21 +1751,21 @@ class testPypiProvider_basic(unittest.TestCase):
                 'mytest/pip/pip-7.0.3.tar.gz')
             for x in range(1,3):
                 try:
-                    fileresult = urllib2.urlopen(
+                    fileresult = urllib.request.urlopen(
                         targetfile,
                         timeout=1,
                         cafile=chrootcert )
                     self.csmake_test.log.error(
                         "Pull from facade did not time out")
                     self.assertTrue(False)
-                except urllib2.URLError as e:
+                except urllib.error.URLError as e:
                     pass
                 except ssl.SSLError as e:
                     pass
                 except:
                     self.csmake_test.log.exception("Unexpected exception")
                     self.assertTrue(False)
-            fileresult = urllib2.urlopen(
+            fileresult = urllib.request.urlopen(
                 targetfile,
                 cafile=chrootcert )
 
@@ -1775,7 +1779,7 @@ class testPypiProvider_basic(unittest.TestCase):
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
 
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
             self.assertEqual(result, 0)
@@ -1836,7 +1840,7 @@ class testPypiProvider_basic(unittest.TestCase):
             controller = service.getController()
 
             #Try getting the index for pip
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/pip'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1854,11 +1858,11 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedPackages.remove(package)
                 except:
-                    print "Package '%s' unexpected" % package
+                    print("Package '%s' unexpected" % package)
                     unexpectedFound = True
             self.assertFalse(unexpectedFound)
             if len(expectedPackages) != 0:
-                print "Packages not retrieved: ", expectedPackages
+                print("Packages not retrieved: ", expectedPackages)
 
             self.assertEqual(len(expectedPackages), 0)
         finally:
@@ -1871,7 +1875,7 @@ class testPypiProvider_basic(unittest.TestCase):
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
 
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             result = subprocess.call(['sudo', 'rm', '-r', cache], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
@@ -1934,7 +1938,7 @@ class testPypiProvider_basic(unittest.TestCase):
             controller = service.getController()
 
             #Try getting the index for pip
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/os-apply-config'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -1947,15 +1951,15 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedPackages.remove(package)
                 except:
-                    print "Package '%s' unexpected" % package
+                    print("Package '%s' unexpected" % package)
                     unexpectedFound = True
             self.assertFalse(unexpectedFound)
             if len(expectedPackages) != 0:
-                print "Packages not retrieved: ", expectedPackages
+                print("Packages not retrieved: ", expectedPackages)
 
             self.assertEqual(len(expectedPackages), 0)
 
-            fileresult = urllib2.urlopen(
+            fileresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'mytest/os-apply-config/os-apply-config-0.1.14.tar.gz'),
                 cafile=chrootcert )
 
@@ -1963,7 +1967,7 @@ class testPypiProvider_basic(unittest.TestCase):
             fileresult.close()
             with open(os.path.join(
                    path,
-                   'pypi-99:99:03/os-apply-config/os-apply-config-0.1.14.tar.gz')) as pypifile:
+                   'pypi-99:99:03/os-apply-config/os-apply-config-0.1.14.tar.gz'), 'rb') as pypifile:
                 pypimd5sum = self.csmake_test._fileMD5(pypifile)
             self.assertEqual(md5sum, pypimd5sum)
 
@@ -1977,7 +1981,7 @@ class testPypiProvider_basic(unittest.TestCase):
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
 
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             result = subprocess.call(['sudo', 'rm', '-r', cache], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
@@ -2005,7 +2009,7 @@ class testPypiProvider_basic(unittest.TestCase):
             try:
                 ssl.create_default_context(cafile=bundle)
             except:
-                print "The bundle with the certificate '%s' is invalid" % bundle
+                print("The bundle with the certificate '%s' is invalid" % bundle)
                 self.assertTrue(False)
 
             PypiProvider.PypiProvider.disposeServiceProvider('tag')
@@ -2019,7 +2023,7 @@ class testPypiProvider_basic(unittest.TestCase):
             try:
                 ssl.create_default_context(cafile=bundle)
             except:
-                print "The bundle '%s' was spoiled by the server" % bundle
+                print("The bundle '%s' was spoiled by the server" % bundle)
                 self.assertTrue(False)
 
             #Is the bundle the exact same as before
@@ -2029,7 +2033,7 @@ class testPypiProvider_basic(unittest.TestCase):
                     stdout=self.csmake_test.log.out(),
                     stderr=self.csmake_test.log.err() )
             except:
-                print "The bundle is not the same as the original, but should be"
+                print("The bundle is not the same as the original, but should be")
                 self.csmake_test.log.exception("     Exception")
                 self.assertTrue(False)
 
@@ -2054,7 +2058,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 time.sleep(0.1)
                 timer = timer - 1
                 if timer == 0:
-                    print "fakeuser's fifo never started after 11 seconds"
+                    print("fakeuser's fifo never started after 11 seconds")
                     self.assertTrue(False)
                 try:
                     with open(os.path.join(fakeuserhome,'.pydistutils.cfg')) as readfake:
@@ -2062,7 +2066,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 except:
                     #File's not ready yet
                     if timer % 10 == 0:
-                        print "still waiting for .pydistutils.cfg to come online"
+                        print("still waiting for .pydistutils.cfg to come online")
                     pass
 
             self.assertTrue(ready)
@@ -2071,7 +2075,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 time.sleep(0.1)
                 timer = timer - 1
                 if timer == 0:
-                    print "fakeuser's fifo never started after 11 seconds"
+                    print("fakeuser's fifo never started after 11 seconds")
                     self.assertTrue(False)
                 try:
                     with open(os.path.join(fakeuserhome,'.config/pip/pip.conf')) as readfake:
@@ -2079,7 +2083,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 except:
                     #File's not ready yet
                     if timer % 10 == 0:
-                        print "still waiting for pip.conf to come online"
+                        print("still waiting for pip.conf to come online")
 
             self.assertTrue(ready)
 
@@ -2133,7 +2137,7 @@ class testPypiProvider_basic(unittest.TestCase):
             try:
                 ssl.create_default_context(cafile=bundle)
             except:
-                print "The bundle '%s' is invalid" % bundle
+                print("The bundle '%s' is invalid" % bundle)
                 self.assertTrue(False)
 
             PypiProvider.PypiProvider.disposeServiceProvider('tag')
@@ -2147,7 +2151,7 @@ class testPypiProvider_basic(unittest.TestCase):
             try:
                 ssl.create_default_context(cafile=bundle)
             except:
-                print "The bundle '%s' was spoiled by the server" % bundle
+                print("The bundle '%s' was spoiled by the server" % bundle)
                 self.assertTrue(False)
 
         finally:
@@ -2239,7 +2243,7 @@ class testPypiProvider_basic(unittest.TestCase):
             try:
                 ssl.create_default_context(cafile=bundle)
             except:
-                print "The bundle '%s' was spoiled by the server" % bundle
+                print("The bundle '%s' was spoiled by the server" % bundle)
                 self.assertTrue(False)
 
         finally:
@@ -2393,7 +2397,7 @@ class testPypiProvider_basic(unittest.TestCase):
             service.startService()
             controller = service.getController()
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'simple/mysql-python'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -2410,11 +2414,11 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedfiles.remove(link)
                 except:
-                    print "File '%s' unexpected" % link
+                    print("File '%s' unexpected" % link)
                     unexpectedFound = True
 
             if len(expectedfiles) != 0:
-                print "Files not retrieved: ", expectedfiles
+                print("Files not retrieved: ", expectedfiles)
 
             self.assertFalse(unexpectedFound)
 
@@ -2429,7 +2433,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 self._stopTestPypiServer()
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
             self.assertEqual(result,0)
@@ -2489,7 +2493,7 @@ class testPypiProvider_basic(unittest.TestCase):
             service.startService()
             controller = service.getController()
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'simple/oslo.config'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -2508,11 +2512,11 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedfiles.remove(link)
                 except:
-                    print "File '%s' unexpected" % link
+                    print("File '%s' unexpected" % link)
                     unexpectedFound = True
 
             if len(expectedfiles) != 0:
-                print "Files not retrieved: ", expectedfiles
+                print("Files not retrieved: ", expectedfiles)
 
             self.assertFalse(unexpectedFound)
 
@@ -2527,7 +2531,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 self._stopTestPypiServer()
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
             self.assertEqual(result,0)
@@ -2587,7 +2591,7 @@ class testPypiProvider_basic(unittest.TestCase):
             service.startService()
             controller = service.getController()
 
-            indexresult = urllib2.urlopen(
+            indexresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'simple/pip'),
                 cafile=chrootcert )
             data = indexresult.read()
@@ -2607,17 +2611,17 @@ class testPypiProvider_basic(unittest.TestCase):
                 try:
                     expectedfiles.remove(link)
                 except:
-                    print "File '%s' unexpected" % link
+                    print("File '%s' unexpected" % link)
                     unexpectedFound = True
 
             if len(expectedfiles) != 0:
-                print "Files not retrieved: ", expectedfiles
+                print("Files not retrieved: ", expectedfiles)
 
             self.assertFalse(unexpectedFound)
 
             self.assertEqual(len(expectedfiles),0)
 
-            fileresult = urllib2.urlopen(
+            fileresult = urllib.request.urlopen(
                 urlparse.urljoin(facadeurl, 'simple/pip/pip-6.1.1-py2.py3-none-any.whl#thisshouldbe=strippedoff'),
                 cafile=chrootcert )
 
@@ -2625,7 +2629,7 @@ class testPypiProvider_basic(unittest.TestCase):
             fileresult.close()
             with open(os.path.join(
                    path,
-                   'pypi-99:99:01/pip/pip-6.1.1-py2.py3-none-any.whl')) as pypifile:
+                   'pypi-99:99:01/pip/pip-6.1.1-py2.py3-none-any.whl'), 'rb') as pypifile:
                 pypimd5sum = self.csmake_test._fileMD5(pypifile)
             self.assertEqual(md5sum, pypimd5sum)
 
@@ -2638,7 +2642,7 @@ class testPypiProvider_basic(unittest.TestCase):
                 self._stopTestPypiServer()
             except:
                 self.csmake_test.log.exception("stopTestPypiServer failed")
-            print "Removing ", chroot
+            print("Removing ", chroot)
             result = subprocess.call(['sudo', 'rm', '-r', chroot], stdout=self.csmake_test.log.out())
             self.assertFalse(os.path.exists(chroot))
             self.assertEqual(result,0)

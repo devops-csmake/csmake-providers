@@ -54,7 +54,7 @@ about=Git, tar, etc is used in a lot of ways in building product.  This
  NOTE: pip install swiftclient and pyinotify for full use of capabilities
 packager=Jeremiah Patterson <jerpat@hpe.com>
 manufacturer=Hewlett Packard Enterprise
-depends=python (>= 2.6), csmake (>= 1.5.17), python-git, python-packaging, python-yaml
+depends=python (>= 3.6), csmake (>= 1.5.17), python-git, python-packaging, python-yaml
 suggests=python-swiftclient, python-pyinotify
 keywords=make build git openstack swift pypi pip fauxservice development
 copyrights=csmake-copyright
@@ -62,9 +62,8 @@ classifiers=
     Development Status :: 4 - Beta
     Intended Audience :: Developers
     Topic :: Software Development :: Build Tools
-    Programming Language :: Python :: 2
-    Programming Language :: Python :: 2.6
-    Programming Language :: Python :: 2.7
+    Programming Language :: Python :: 3
+    Programming Language :: Python :: 3 :: Only
     License :: OSI Approved :: GNU General Public License v3 (GPLv3)
 **files=
     <CsmakeModules (python:csmake-modules)> CsmakeModules/*.py

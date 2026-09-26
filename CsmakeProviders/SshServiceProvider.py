@@ -34,9 +34,17 @@ import threading
 import subprocess
 import os.path
 import time
-from CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceConfig
-from CsmakeServiceProvider import CsmakeServiceDaemon
-from CsmakeServiceProvider import CsmakeServiceConfigManager
+try:
+    # Imported as part of the CsmakeProviders package (production usage)
+    from .CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceConfig
+    from .CsmakeServiceProvider import CsmakeServiceDaemon
+    from .CsmakeServiceProvider import CsmakeServiceConfigManager
+except ImportError:
+    # Imported as a flat top-level module (e.g. by the test harness, which
+    # runs with CsmakeProviders/ itself on sys.path)
+    from CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceConfig
+    from CsmakeServiceProvider import CsmakeServiceDaemon
+    from CsmakeServiceProvider import CsmakeServiceConfigManager
 
 class SshConfigurationHelper:
     @staticmethod
@@ -225,7 +233,7 @@ class SshServiceDaemon(CsmakeServiceDaemon):
             subprocess.check_output,
             ['which', 'sshd'] )
         command = [
-          fullsshd.strip(), '-e', '-D',
+          fullsshd.decode().strip(), '-e', '-D',
           '-f', self.configManager.getDaemonConfigFile()
         ]
         self.log.debug("Calling Popen with: %s", ' '.join(command))
@@ -267,7 +275,7 @@ class SshServiceDaemon(CsmakeServiceDaemon):
                 processes = self.configManager.shellout(
                     subprocess.check_output,
                     [ 'ps', '-o', 'pid', '--ppid', str(self.process.pid), '--noheaders' ] )
-                processes = processes.split()
+                processes = processes.decode().split()
                 for process in processes:
                     self.configManager.shellout(
                         subprocess.call,
