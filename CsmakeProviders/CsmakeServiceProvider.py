@@ -79,7 +79,7 @@ class CsmakeServiceChangeFilePrivs:
             oldstat = os.stat(self.path)
             self.oldowner = str(oldstat.st_uid)
             self.oldgroup = str(oldstat.st_gid)
-            self.oldpermissions = oct(stat.S_IMODE(oldstat.st_mode))
+            self.oldpermissions = '%o' % stat.S_IMODE(oldstat.st_mode)
         except Exception as e:
             statout = self.manager.shellout(
                 subprocess.check_output,
@@ -284,11 +284,11 @@ class CsmakeServiceConfig:
             direxisted = True
             olddirowner = olddirstat.st_uid
             olddirgroup = olddirstat.st_gid
-            olddirpermissions = oct(stat.S_IMODE(olddirstat.st_mode))
+            olddirpermissions = '%o' % stat.S_IMODE(olddirstat.st_mode)
             oldstat = os.stat(chrootpath)
             oldowner = oldstat.st_uid
             oldgroup = oldstat.st_gid
-            oldpermissions = oct(stat.S_IMODE(oldstat.st_mode))
+            oldpermissions = '%o' % stat.S_IMODE(oldstat.st_mode)
         except Exception as e:
             self.log.devdebug("Getting old stat info for '%s' failed with: %s", path, str(e))
             self.log.devdebug("   Assuming path or file does not exist")

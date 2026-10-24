@@ -123,7 +123,8 @@ class PullLinksThread(threading.Thread):
             self.path = path
             self.exc_info = None
 
-            buf = ''.join(buf).split('<a ')[1:]
+            #urlopen().read() returns bytes; the link parsing is all text
+            buf = b''.join(buf).decode('utf-8', 'replace').split('<a ')[1:]
             buf = [ x.split('</a')[0].split('>',1) for x in buf ]
             for link in buf:
                 #NOTE: It may be more correct to split on '=' and get the
@@ -1241,8 +1242,8 @@ class PypiContext:
                     netfd = urllib.request.urlopen(path)
                     netinfo = netfd.info()
                     handler.send_response(200)
-                    handler.send_header("Content-type", netinfo.gettype())
-                    length = netinfo.getheader("Content-length")
+                    handler.send_header("Content-type", netinfo.get_content_type())
+                    length = netinfo.get("Content-length")
                     if length is not None:
                         handler.send_header("Content-length", length)
                     handler.end_headers()
