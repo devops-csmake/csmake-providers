@@ -31,7 +31,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # </copyright>
 from CsmakeProviders.PypiProvider import PypiProvider
-from Csmake.CsmakeAspect import CsmakeAspect
+from CsmakeCore.CsmakeAspect import CsmakeAspect
 
 class PypiPushContext(CsmakeAspect):
     """Purpose: An aspect or regular section to modify the versioning

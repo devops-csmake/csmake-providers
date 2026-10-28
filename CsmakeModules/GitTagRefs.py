@@ -30,9 +30,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # </copyright>
-from Csmake.CsmakeModule import CsmakeModule
+from CsmakeCore.CsmakeModule import CsmakeModule
 from CsmakeProviders.GitProvider import GitProvider
-from Csmake.FileManager import FileManager, FileSpec, FileInstance
+from CsmakeCore.FileManager import FileManager, FileSpec, FileInstance
 import git
 import yaml
 import os.path
@@ -71,8 +71,8 @@ class GitTagRefs(CsmakeModule):
     REQUIRED_OPTIONS = ['files', 'tag']
 
     def _processCsversionSources(self, sources, gitrefs):
-        for source, build in sources.iteritems():
-            for buildname, data in build.iteritems():
+        for source, build in sources.items():
+            for buildname, data in build.items():
                 if data[0] == 'git':
                     if source not in gitrefs:
                         gitrefs[source] = {}
@@ -83,8 +83,8 @@ class GitTagRefs(CsmakeModule):
 
     def _createGitTagList(self, gitrefs):
         taglist = []
-        for source, urldict in gitrefs.iteritems():
-            for url, entries in urldict.iteritems():
+        for source, urldict in gitrefs.items():
+            for url, entries in urldict.items():
                 leadref = entries[0][0]['REF']
                 for entry in entries:
                     if self.multiref:
@@ -127,7 +127,7 @@ class GitTagRefs(CsmakeModule):
         gitrefs = {}
         for filepath in files:
             with open(filepath) as f:
-                current = yaml.load(f)
+                current = yaml.safe_load(f)
             if 'sources' in current:
                 self._processCsversionSources(current['sources'], gitrefs)
             else:

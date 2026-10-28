@@ -22,27 +22,137 @@ import subprocess
 import os
 import os.path
 import stat
-import urllib2
-import urlparse
+import urllib.request
+import urllib.parse
 import re
 import random
 import glob
 import getpass
 import time
-import StringIO
+import io
 import shutil
 import logging
 import sys
 import tempfile
 import functools
-from SimpleHTTPServer import SimpleHTTPRequestHandler
-from urllib2 import HTTPError
-from CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceDaemon
-from CsmakeServiceProvider import CsmakeServiceConfigManager
-from CsmakeServiceProvider import CsmakeServiceConfig
+from http.server import SimpleHTTPRequestHandler
+from urllib.error import HTTPError
+try:
+    # Imported as part of the CsmakeProviders package (production usage)
+    from .CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceDaemon
+    from .CsmakeServiceProvider import CsmakeServiceConfigManager
+    from .CsmakeServiceProvider import CsmakeServiceConfig
+except ImportError:
+    # Imported as a flat top-level module (e.g. by the test harness, which
+    # runs with CsmakeProviders/ itself on sys.path)
+    from CsmakeServiceProvider import CsmakeServiceProvider, CsmakeServiceDaemon
+    from CsmakeServiceProvider import CsmakeServiceConfigManager
+    from CsmakeServiceProvider import CsmakeServiceConfig
 #PYPA packages
 from packaging import version
 from packaging import specifiers
+
+#Versions that PEP 440 rejects (e.g., from file names such as
+#mypackage-is-v(42.4.1Thisisdog)3iohagi.tar.gz) were represented with
+#packaging's LegacyVersion, which packaging 22 removed.
+#_nonPep440Version() gives the LegacyVersion if packaging still has one and
+#otherwise a stand-in that orders the same way:
+#   * Every such version sorts before every PEP 440 version (packaging gave
+#     them an epoch of -1), as LegacyVersion did.
+#   * Among themselves they sort as setuptools' old parse_version did, which
+#     is what LegacyVersion implemented (numbers by value, then letters,
+#     "rc"/"pre"/"dev" before the final release, case ignored).
+#The results are used as dictionary keys, printed, and handed to
+#SpecifierSet.filter(); they are never ordered by this module itself.
+_LOOSE_PIECE = re.compile(r'(\d+|[a-z]+|\.|-)')
+_LOOSE_ALIASES = {'pre': 'c', 'preview': 'c', '-': 'final-', 'rc': 'c',
+                  'dev': '@'}
+
+def _looseVersionKey(text):
+    pieces = []
+    for piece in _LOOSE_PIECE.split(text.lower()):
+        piece = _LOOSE_ALIASES.get(piece, piece)
+        if not piece or piece == '.':
+            continue
+        if piece[:1] in '0123456789':
+            pieces.append(piece.zfill(8))   #so numbers compare by value
+        else:
+            pieces.append('*' + piece)
+    pieces.append('*final')                 #so pre-releases sort before it
+    parts = []
+    for piece in pieces:
+        if piece.startswith('*'):
+            if piece < '*final':
+                while parts and parts[-1] == '*final-':
+                    parts.pop()
+            while parts and parts[-1] == '00000000':
+                parts.pop()                 #1.0 == 1.0.0
+        parts.append(piece)
+    return tuple(parts)
+
+class _NonPep440Version(object):
+    """Stands in for packaging's LegacyVersion when packaging lacks it."""
+
+    def __init__(self, text):
+        self._text = text if isinstance(text, str) else str(text)
+        self._key = _looseVersionKey(self._text)
+
+    def __str__(self):
+        return self._text
+
+    def __repr__(self):
+        return "<NonPep440Version('%s')>" % self._text
+
+    def __hash__(self):
+        return hash(self._key)
+
+    #What callers of a packaging version may ask of it
+    public = property(lambda self: self._text)
+    base_version = public
+    epoch = -1
+    is_prerelease = False
+    is_postrelease = False
+    is_devrelease = False
+
+    def _compare(self, other, operation):
+        if isinstance(other, _NonPep440Version):
+            return operation(self._key, other._key)
+        if isinstance(other, version.Version):
+            return operation(0, 1)          #before every PEP 440 version
+        return NotImplemented
+
+    def __lt__(self, other):
+        return self._compare(other, lambda a, b: a < b)
+
+    def __le__(self, other):
+        return self._compare(other, lambda a, b: a <= b)
+
+    def __eq__(self, other):
+        return self._compare(other, lambda a, b: a == b)
+
+    def __ne__(self, other):
+        return self._compare(other, lambda a, b: a != b)
+
+    def __gt__(self, other):
+        return self._compare(other, lambda a, b: a > b)
+
+    def __ge__(self, other):
+        return self._compare(other, lambda a, b: a >= b)
+
+def _nonPep440Version(text):
+    legacy = getattr(version, 'LegacyVersion', None)
+    if legacy is not None:
+        return legacy(text)
+    return _NonPep440Version(text)
+
+def _pinSpecifier(found):
+    #Requirement text matching exactly one known version.  packaging 22 also
+    #removed LegacySpecifier, so a version that PEP 440 rejects cannot be
+    #given to '==' any more; '===' (arbitrary equality, a plain string
+    #comparison) is accepted for any text by every packaging.
+    if isinstance(found, version.Version):
+        return '==' + str(found)
+    return '===' + str(found)
 
 class PullLinksThread(threading.Thread):
     """Results are in the form of (index, [(href, name)...])"""
@@ -73,7 +183,7 @@ class PullLinksThread(threading.Thread):
     def getLinks(self):
         #Reraise the exception
         if self.exc_info is not None:
-            raise self.exc_info[0], self.exc_info[1], self.exc_info[2]
+            raise self.exc_info[1].with_traceback(self.exc_info[2])
         else:
             return (self.url, self.links)
 
@@ -90,7 +200,7 @@ class PullLinksThread(threading.Thread):
             url = originalurl
             if url[-1] != '/':
                 url += '/'
-            url = urlparse.urljoin(url, path)
+            url = urllib.parse.urljoin(url, path)
             if url[-1] != '/':
                 url += '/'
 
@@ -98,7 +208,7 @@ class PullLinksThread(threading.Thread):
             self.links = []
 
             try:
-                fd = urllib2.urlopen(url)
+                fd = urllib.request.urlopen(url)
             except:
                 self.exc_info = sys.exc_info()
                 continue
@@ -115,7 +225,8 @@ class PullLinksThread(threading.Thread):
             self.path = path
             self.exc_info = None
 
-            buf = ''.join(buf).split('<a ')[1:]
+            #urlopen().read() returns bytes; the link parsing is all text
+            buf = b''.join(buf).decode('utf-8', 'replace').split('<a ')[1:]
             buf = [ x.split('</a')[0].split('>',1) for x in buf ]
             for link in buf:
                 #NOTE: It may be more correct to split on '=' and get the
@@ -130,7 +241,7 @@ class PullLinksThread(threading.Thread):
                     continue
                 linkmatch = match.group('link')
                 if linkmatch is not None:
-                    linkmatch = urllib2.unquote(linkmatch)
+                    linkmatch = urllib.parse.unquote(linkmatch)
                 self.links.append((linkmatch, link[1]))
             break
         return success
@@ -174,7 +285,7 @@ class PypiContext:
     #  Useful for initiating transfers without a real client
     class NullHTTPHandler:
         def __init__(self):
-            self.wfile = StringIO.StringIO()
+            self.wfile = io.BytesIO()
 
         def send_header(self, header, value):
             pass
@@ -229,7 +340,7 @@ class PypiContext:
                 if len(self.dashparts[-1]) > 0 and self.dashparts[-1][0].isdigit():
                     #PEP-427 build tag
                     self.results['build'] = self.dashparts[-1]
-                    self.results['version'] = version.LegacyVersion(self.dashparts[-2])
+                    self.results['version'] = _nonPep440Version(self.dashparts[-2])
                     if not packageFound:
                         self.results['package'] = '-'.join(self.dashparts[:-2])
                     self.results['heuristic'] = '6c'
@@ -240,7 +351,7 @@ class PypiContext:
             if packageFound:
                 minparts = 1
             if len(self.dashparts) >= minparts:
-                self.results['version'] = version.LegacyVersion(self.dashparts[-1])
+                self.results['version'] = _nonPep440Version(self.dashparts[-1])
                 if not packageFound:
                     self.results['package'] = '-'.join(self.dashparts[:-1])
                 self.results['heuristic'] = '6d'
@@ -278,7 +389,7 @@ class PypiContext:
                     try:
                         self.results['version'] = version.Version(vstring)
                     except version.InvalidVersion:
-                        self.results['version'] = version.LegacyVersion(vstring)
+                        self.results['version'] = _nonPep440Version(vstring)
                     self.results['heuristic'] = '6b'
                     return True
             return False
@@ -322,7 +433,7 @@ class PypiContext:
             try:
                 self.results['version'] = version.Version(found[2:-1])
             except version.InvalidVersion:
-                self.results['version'] = version.LegacyVersion(found[2:-1])
+                self.results['version'] = _nonPep440Version(found[2:-1])
             if not packageFound:
                 self.results['package'] = '-'.join(self.dashparts[:vstartitem])
             self.results['heuristic'] = '6a'
@@ -789,8 +900,8 @@ class PypiContext:
             result['package'] = packageName
             numpossibledashes = packageName.count('-') + 1
             while numpossibledashes:
-            	proposedPackage = self._normalizePackageName(
-                	'-'.join(dashparts[:numpossibledashes]))
+                proposedPackage = self._normalizePackageName(
+                    '-'.join(dashparts[:numpossibledashes]))
                 if proposedPackage != packageName:
                     numpossibledashes = numpossibledashes - 1
                 else:
@@ -883,7 +994,7 @@ class PypiContext:
             self.indicies.extend(indicies)
 
     def _startStandardHTMLPage(self, pagename):
-        page = StringIO.StringIO()
+        page = io.StringIO()
         page.write('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
         page.write("<html>\n<title>csmake PyPI Proxy</title>\n")
         page.write("<body>\n<h2>csmake PyPI Proxy: %s</h2>\n" % pagename)
@@ -891,17 +1002,17 @@ class PypiContext:
 
     def _sendStandardHTMLPage(self, page, handler):
         page.write("</body>\n</html>\n")
-        length = page.tell()
-        page.seek(0)
+        content = page.getvalue().encode('utf-8')
+        length = len(content)
         handler.send_response(200)
         handler.send_header("Content-type", "text/html")
         handler.send_header("Content-Length", str(length))
         handler.end_headers()
-        shutil.copyfileobj(page, handler.wfile)
+        handler.wfile.write(content)
         page.close()
 
     def _isaBacklink(self, url, link):
-        rellink = os.path.relpath(urlparse.urljoin(url,link),url)
+        rellink = os.path.relpath(urllib.parse.urljoin(url,link),url)
         self.log.devdebug("'%s' is the relative path", rellink)
         self.log.devdebug("'%s' url - '%s' link", url, link)
         self.log.devdebug("url: %s", url)
@@ -956,7 +1067,7 @@ class PypiContext:
                 self.controller.unlockPackageList()
         page = self._startStandardHTMLPage(
             'Available packages in context: %s' % self.name)
-        for package in packageCache.keys():
+        for package in list(packageCache.keys()):
             page.write('<p><a href="%s/">%s</a></p>\n' % (package, package))
         self._sendStandardHTMLPage(page, handler)
         return True
@@ -1080,14 +1191,14 @@ class PypiContext:
                 #so we have to find and split out any fragment here as well
                 linkpart = link[0].split('#')[0]
                 abspart = ''
-                parsed = urlparse.urlsplit(linkpart)
+                parsed = urllib.parse.urlsplit(linkpart)
                 if len(parsed.scheme) > 0:
                     linkparts = linkpart.split('/',3)
                     linkpart = linkparts[-1]
                     abspart = '/'.join(linkparts[:-1])
-                fulllink = urlparse.urljoin(
+                fulllink = urllib.parse.urljoin(
                     url,
-                    abspart + '/' + urllib2.quote(linkpart) )
+                    abspart + '/' + urllib.parse.quote(linkpart) )
 
                 if filesplit['filename'] not in packageCache[package][0]:
                     packageCache[package][0][filesplit['filename']] = [
@@ -1113,7 +1224,7 @@ class PypiContext:
             'Files available for "%s" in context: %s' % (
                 package,
                 self.name ) )
-        versions = packageCache[package][1].keys()
+        versions = list(packageCache[package][1].keys())
         self.log.devdebug(
             "Current constraints: %s", str(self.constraints))
         if package in self.constraints:
@@ -1128,9 +1239,9 @@ class PypiContext:
                 str(versions),
                 str(pkglimits) )
         for version in versions:
-            for filename, entry in packageCache[package][1][version].iteritems():
+            for filename, entry in packageCache[package][1][version].items():
                 page.write('<p><a href="%s%s">%s</a></p>\n' % (
-                    urllib2.quote(filename),
+                    urllib.parse.quote(filename),
                     entry[1]['fragment'],
                     filename))
         self._sendStandardHTMLPage(page, handler)
@@ -1140,7 +1251,7 @@ class PypiContext:
         #TODO: Limit availability of package if no active indicies
         #      appear in the list for the file
         package = self._normalizePackageName(package)
-        filename = urllib2.unquote(filename)
+        filename = urllib.parse.unquote(filename)
         packageCache, services = self.controller.getPypiImage()
         listVersionsCalled = False
         if package not in packageCache:
@@ -1166,7 +1277,7 @@ class PypiContext:
         if filepath:
             self.log.devdebug("Attempting to pull file from cache: %s", filepath)
             try:
-                with open(filepath) as readfd:
+                with open(filepath, 'rb') as readfd:
                     readfd.seek(0,2)
                     length = readfd.tell()
                     readfd.seek(0)
@@ -1225,16 +1336,16 @@ class PypiContext:
                         cachefilepath = os.path.join(
                             cachepackagepath,
                             filename )
-                        cachefd = open(cachefilepath, 'w')
+                        cachefd = open(cachefilepath, 'wb')
                 except:
                     self.log.exception("Attempt to use cache at %s, failed", cachepath)
                     cachefilepath = None
                 try:
-                    netfd = urllib2.urlopen(path)
+                    netfd = urllib.request.urlopen(path)
                     netinfo = netfd.info()
                     handler.send_response(200)
-                    handler.send_header("Content-type", netinfo.gettype())
-                    length = netinfo.getheader("Content-length")
+                    handler.send_header("Content-type", netinfo.get_content_type())
+                    length = netinfo.get("Content-length")
                     if length is not None:
                         handler.send_header("Content-length", length)
                     handler.end_headers()
@@ -1398,7 +1509,7 @@ class PypiController:
             initialContext.listPackages(nullhandler)
             #TODO: Speed this up dramatically with threading
             #      Need to make listVersions threadsafe first.
-            newPackages = self.proxyPypiImage.keys()
+            newPackages = list(self.proxyPypiImage.keys())
             numPackages = len(newPackages)
             packagesCompleted = 0
             for package in newPackages:
@@ -1410,13 +1521,13 @@ class PypiController:
                         packagesCompleted,
                         numPackages )
             constraintList=[]
-            for package, image in self.proxyPypiImage.iteritems():
-                versions = [str(x) for x in image[1].keys()]
-                if len(versions) == 0:
+            for package, image in self.proxyPypiImage.items():
+                pins = [_pinSpecifier(x) for x in image[1].keys()]
+                if len(pins) == 0:
                     continue
-                constraintList.append("%s==%s" % (
+                constraintList.append("%s%s" % (
                     package,
-                    '|=='.join(versions)))
+                    '|'.join(pins)))
             self.log.debug("Initial Constraints: %s", str(constraintList))
             self.initialConstraints = constraintList
 
@@ -1916,7 +2027,7 @@ class PypiService(CsmakeServiceDaemon):
         self.accepting = False
         ciphers = subprocess.check_output(
             ['openssl', 'ciphers'])
-        self.ciphers = ciphers.strip()
+        self.ciphers = ciphers.decode().strip()
         #options['cabundle'] = clazz.certhandler.certbundles()[0]
 
     def getController(self):
@@ -2039,7 +2150,7 @@ class PypiService(CsmakeServiceDaemon):
         address = self.port.address()
         if self.accepting:
             try:
-                urllib2.urlopen(
+                urllib.request.urlopen(
                     "https://%s:%s/xyzzy/xzyyzl33t/...shuttingdownthefacade..." % address,
                     timeout=1)
             except:
@@ -2357,19 +2468,20 @@ class PypiProvider(CsmakeServiceProvider):
     def __init__(self, module, tag, **options):
         ciphers = subprocess.check_output(
             ['openssl', 'ciphers'])
-        self.ciphers = ciphers.strip()
+        self.ciphers = ciphers.decode().strip()
         CsmakeServiceProvider.__init__(self, module, tag, **options)
         self.serviceClass = PypiService
 
     def _customizeSocket(self, socket):
-        return ssl.wrap_socket(
-            socket,
-            #ssl_version=ssl.PROTOCOL_TLSv1_2,
-            ssl_version=ssl.PROTOCOL_SSLv23,
-            server_side=True,
-            ciphers=self.ciphers,
+        #ssl.wrap_socket() was removed in Python 3.12, so wrap with an
+        #SSLContext.  PROTOCOL_TLS_SERVER (Python 3.6+) negotiates the
+        #highest protocol both sides support, as PROTOCOL_SSLv23 did.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(
             certfile=self.certificateManager.getCertPath(),
             keyfile=self.certificateManager.getCertKeyPath() )
+        context.set_ciphers(self.ciphers)
+        return context.wrap_socket(socket, server_side=True)
 
     def _processOptions(self):
         if 'interfaces' not in self.options:

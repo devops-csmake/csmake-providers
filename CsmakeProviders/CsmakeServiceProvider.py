@@ -79,12 +79,12 @@ class CsmakeServiceChangeFilePrivs:
             oldstat = os.stat(self.path)
             self.oldowner = str(oldstat.st_uid)
             self.oldgroup = str(oldstat.st_gid)
-            self.oldpermissions = oct(stat.S_IMODE(oldstat.st_mode))
+            self.oldpermissions = '%o' % stat.S_IMODE(oldstat.st_mode)
         except Exception as e:
             statout = self.manager.shellout(
                 subprocess.check_output,
                 ['stat', '--printf', '%a %u %g', self.path] )
-            statparts = statout.split()
+            statparts = statout.decode().split()
             self.oldpermissions=statparts[0]
             self.oldowner=statparts[1]
             self.oldgroup=statparts[2]
@@ -284,11 +284,11 @@ class CsmakeServiceConfig:
             direxisted = True
             olddirowner = olddirstat.st_uid
             olddirgroup = olddirstat.st_gid
-            olddirpermissions = oct(stat.S_IMODE(olddirstat.st_mode))
+            olddirpermissions = '%o' % stat.S_IMODE(olddirstat.st_mode)
             oldstat = os.stat(chrootpath)
             oldowner = oldstat.st_uid
             oldgroup = oldstat.st_gid
-            oldpermissions = oct(stat.S_IMODE(oldstat.st_mode))
+            oldpermissions = '%o' % stat.S_IMODE(oldstat.st_mode)
         except Exception as e:
             self.log.devdebug("Getting old stat info for '%s' failed with: %s", path, str(e))
             self.log.devdebug("   Assuming path or file does not exist")
@@ -776,7 +776,7 @@ class CsmakeServiceConfigManager(threading.Thread):
         self.clean()
 
     def clean(self):
-        for key, value in self.typeToObjs.iteritems():
+        for key, value in self.typeToObjs.items():
             for config in value:
                 try:
                     config.clean()
@@ -1058,9 +1058,9 @@ class CsmakePortManager:
         if sockethandler is not None:
             sock = sockethandler(sock)
         lockfile = clazz._lock(log)
-        if isinstance(start, basestring):
+        if isinstance(start, str):
             start = int(start)
-        if isinstance(stop, basestring):
+        if isinstance(stop, str):
             stop = int(stop)
         try:
             for port in range(start, stop+1):
@@ -1091,7 +1091,7 @@ class CsmakePortManager:
     def getUserPortRange(clazz, log):
         ports = subprocess.check_output(
             ['cat', '/proc/sys/net/ipv4/ip_local_port_range'] )
-        portparts = ports.split()
+        portparts = ports.decode().split()
         return portparts
 
     def __init__(self, interface, port, sock, log, sockethandler):
@@ -1269,13 +1269,20 @@ class CsmakeServiceProvider:
             lower = self.lowerport
             upper = self.upperport
             if 'port-range' in self.options:
+                #<lower>-<upper>, or one port to use alone
                 rangeParts = self.options['port-range'].split('-')
-                if len(rangeParts) != 2:
-                    self.log.error("Range in 'port-range' must be <lower>-<upper>")
+                try:
+                    if len(rangeParts) == 1:
+                        lower = upper = int(rangeParts[0].strip())
+                    elif len(rangeParts) == 2:
+                        lower = int(rangeParts[0].strip())
+                        upper = int(rangeParts[1].strip())
+                    else:
+                        raise ValueError("too many parts")
+                except ValueError:
+                    self.log.error("Range in 'port-range' must be <lower>-<upper> (or a single port)")
                     self.log.error("    Got: %s", self.options['port-range'])
                     raise ValueError("'port-range' invalid")
-                lower = int(rangeParts[0].strip())
-                upper = int(rangeParts[0].strip())
             else:
                 self.log.info("Range for ports not defined, using %d-%d", lower, upper)
             openPort = CsmakePortManager.findOpenTcpPort(
@@ -1322,7 +1329,7 @@ class CsmakeServiceProvider:
         self.service = None
         try:
             if 'port' in self.options and self.options['port'] is not None \
-               and not isinstance(self.options['port'], basestring):
+               and not isinstance(self.options['port'], str):
                 self.options['port'].cleanup()
         except Exception as e:
             self.module.log.debug("Attempt to free port object failed: %s", str(e))

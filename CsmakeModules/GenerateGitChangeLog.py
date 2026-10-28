@@ -30,10 +30,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # </copyright>
-from Csmake.CsmakeModule import CsmakeModule
+from CsmakeCore.CsmakeModule import CsmakeModule
 from CsmakeProviders.GitProvider import GitProvider
 import os.path
-import codecs
 import git
 import yaml
 
@@ -154,9 +153,7 @@ class GenerateGitChangeLog(CsmakeModule):
             if not hasattr(self, classString):
                 self.log.error("File '%s' type '%s' does not have a output formatter defined", spec[0], spec[1])
             else:
-                UTF8Writer = codecs.getwriter('utf8')
-                with open(spec[0], 'w') as fileobj:
-                    fileobj = UTF8Writer(fileobj)
+                with open(spec[0], 'w', encoding='utf-8') as fileobj:
                     formatter = getattr(self, classString)()
                     if changelog is None:
                         formatter.nolog(fileobj, extrainfo)
