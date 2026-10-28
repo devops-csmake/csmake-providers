@@ -126,6 +126,17 @@ class testNatPortManager_py3(PortTestCase):
 
         self.check_call.assert_not_called()
 
+    @unittest.skip("pre-existing: with no free port the manager fails with "
+                   "an AttributeError on None (and then complains again in "
+                   "__del__) instead of a clear error")
+    def test_init_noFreePortIsAClearError(self):
+        self.find.return_value = None
+
+        with self.assertRaises(Exception) as caught:
+            self._nat()
+
+        self.assertNotIsInstance(caught.exception, AttributeError)
+
     def test_init_aFailingIptablesIsAnErrorAndNothingIsToBeUndone(self):
         self.check_call.side_effect = support.called_process_error(['iptables'])
 
@@ -235,6 +246,14 @@ class testPortLock_py3(PortTestCase):
 
         self.opener.return_value.close.assert_called_once_with()
         self.assertEqual(len(self.log.messages('exception')), 1)
+
+    @unittest.skip("pre-existing: when flock fails _lock closes the file but "
+                   "still returns it, so callers believe they hold a lock "
+                   "(and later fail to unlock a closed file)")
+    def test_lock_aLockThatCannotBeTakenYieldsNoLockFile(self):
+        self.flock.side_effect = OSError(errno.EINTR, 'interrupted')
+
+        self.assertIsNone(PortManager._lock(self.log))
 
     def test_unlock_releasesTheLockThenClosesTheFile(self):
         lockfile = unittest.mock.Mock()
@@ -347,23 +366,38 @@ class testProviderPortOptions_py3(PortTestCase):
                          ['10.0.0.5', '10.0.0.6', '10.0.0.7'])
         self.assertEqual(self.find.call_args[0][0], '10.0.0.5')
 
-    def test_aPortRangeOfOnePortIsSearchedAsGiven(self):
-        # (only a single-port range: how the upper bound is computed for a
-        # wider range is not asserted)
-        provider = self._provider(**{'port-range': ' 30000 - 30000'})
+    def test_aPortRangeIsSearchedFromItsLowerToItsUpperPort(self):
+        for text in ('30000-30010', ' 30000 - 30010 '):
+            with self.subTest(port_range=text):
+                self.find.reset_mock()
+                provider = self._provider(**{'port-range': text})
 
-        provider._processOptions()
+                provider._processOptions()
 
-        self.assertEqual(self.find.call_args[0][1:3], (30000, 30000))
+                self.assertEqual(self.find.call_args[0][1:3], (30000, 30010))
+
+    def test_aSinglePortGivenAsTheRangeIsSearchedAlone(self):
+        for text in ('30000', ' 30000 ', '30000-30000'):
+            with self.subTest(port_range=text):
+                self.find.reset_mock()
+                provider = self._provider(**{'port-range': text})
+
+                provider._processOptions()
+
+                self.assertEqual(self.find.call_args[0][1:3], (30000, 30000))
 
     def test_aMalformedPortRangeIsAnError(self):
-        provider = self._provider(**{'port-range': '30000'})
+        for text in ('abc', 'a-b', '30000-', '-30000', '1-2-3', ''):
+            with self.subTest(port_range=text):
+                self.log.records[:] = []
+                self.find.reset_mock()
+                provider = self._provider(**{'port-range': text})
 
-        with self.assertRaisesRegex(ValueError, 'port-range'):
-            provider._processOptions()
+                with self.assertRaisesRegex(ValueError, 'port-range'):
+                    provider._processOptions()
 
-        self.assertEqual(len(self.log.messages('error')), 2)
-        self.find.assert_not_called()
+                self.assertEqual(len(self.log.messages('error')), 2)
+                self.find.assert_not_called()
 
     def test_everyPortBeingBusyIsAnError(self):
         self.find.return_value = None

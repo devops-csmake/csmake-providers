@@ -1269,13 +1269,20 @@ class CsmakeServiceProvider:
             lower = self.lowerport
             upper = self.upperport
             if 'port-range' in self.options:
+                #<lower>-<upper>, or one port to use alone
                 rangeParts = self.options['port-range'].split('-')
-                if len(rangeParts) != 2:
-                    self.log.error("Range in 'port-range' must be <lower>-<upper>")
+                try:
+                    if len(rangeParts) == 1:
+                        lower = upper = int(rangeParts[0].strip())
+                    elif len(rangeParts) == 2:
+                        lower = int(rangeParts[0].strip())
+                        upper = int(rangeParts[1].strip())
+                    else:
+                        raise ValueError("too many parts")
+                except ValueError:
+                    self.log.error("Range in 'port-range' must be <lower>-<upper> (or a single port)")
                     self.log.error("    Got: %s", self.options['port-range'])
                     raise ValueError("'port-range' invalid")
-                lower = int(rangeParts[0].strip())
-                upper = int(rangeParts[0].strip())
             else:
                 self.log.info("Range for ports not defined, using %d-%d", lower, upper)
             openPort = CsmakePortManager.findOpenTcpPort(
