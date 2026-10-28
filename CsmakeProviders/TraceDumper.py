@@ -91,7 +91,7 @@ class TraceDumper(threading.Thread):
         threading.Thread.__init__(self)
     
     def run(self):
-        while not self.stop_requested.isSet():
+        while not self.stop_requested.is_set():
             time.sleep(self.interval)
             sys.stdout.flush()
             if self.auto or not os.path.isfile(self.fpath):
@@ -120,7 +120,7 @@ def trace_start(fpath,interval=5,auto=True):
     global _tracer
     if _tracer is None:
         _tracer = TraceDumper(fpath,interval,auto)
-        _tracer.setDaemon(True)
+        _tracer.daemon = True
         _tracer.start()
     else:
         raise Exception("Already tracing to %s"%_tracer.fpath)
@@ -131,6 +131,6 @@ def trace_stop():
     if _tracer is None:
         raise Exception("Not tracing, cannot stop.")
     else:
-        _trace.stop()
-        _trace = None
+        _tracer.stop()
+        _tracer = None
 

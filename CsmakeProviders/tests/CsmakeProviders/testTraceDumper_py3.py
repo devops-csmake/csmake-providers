@@ -27,7 +27,6 @@ import shutil
 import tempfile
 import unittest
 import unittest.mock
-import warnings
 
 try:
     from . import providers_support as support
@@ -77,15 +76,12 @@ class testTraceDumper_py3(unittest.TestCase):
 
     def _runOnce(self, dumper, fileExists):
         dumper.stacktraces = unittest.mock.Mock()
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', DeprecationWarning)  # isSet()
-            with unittest.mock.patch.object(
-                    TraceDumper.time, 'sleep',
-                    side_effect=lambda seconds: dumper.stop_requested.set()), \
-                    unittest.mock.patch.object(
-                        TraceDumper.os.path, 'isfile',
-                        return_value=fileExists):
-                dumper.run()
+        with unittest.mock.patch.object(
+                TraceDumper.time, 'sleep',
+                side_effect=lambda seconds: dumper.stop_requested.set()), \
+                unittest.mock.patch.object(
+                    TraceDumper.os.path, 'isfile', return_value=fileExists):
+            dumper.run()
         return dumper.stacktraces
 
     def test_run_autoModeRewritesTheTraceEveryInterval(self):
@@ -97,6 +93,108 @@ class testTraceDumper_py3(unittest.TestCase):
             self._runOnce(self._dumper(auto=False), True).call_count, 0)
         self.assertEqual(
             self._runOnce(self._dumper(auto=False), False).call_count, 1)
+
+
+    def test_run_checksTheStopFlagWithIsSet(self):
+        # Event.isSet() is a deprecated alias of is_set()
+        dumper = self._dumper()
+        dumper.stacktraces = unittest.mock.Mock()
+        flag = unittest.mock.Mock(spec=['is_set', 'set'])
+        flag.is_set.side_effect = [False, True]
+        dumper.stop_requested = flag
+
+        with unittest.mock.patch.object(TraceDumper.time, 'sleep'):
+            dumper.run()
+
+        self.assertEqual(flag.is_set.call_count, 2)
+        dumper.stacktraces.assert_called_once_with()
+
+    def test_run_aTraceThatCannotBeWrittenEndsTheThreadWithTheError(self):
+        dumper = self._dumper()
+        dumper.stacktraces = unittest.mock.Mock(side_effect=OSError('disk full'))
+
+        with unittest.mock.patch.object(TraceDumper.time, 'sleep'):
+            with self.assertRaises(OSError):
+                dumper.run()
+
+    def test_stop_stopsTheThreadAndRemovesTheTraceFile(self):
+        dumper = self._dumper()
+        with open(self.path, 'w') as f:
+            f.write('old trace')
+        dumper.join = unittest.mock.Mock()
+
+        dumper.stop()
+
+        self.assertTrue(dumper.stop_requested.is_set())
+        dumper.join.assert_called_once_with()
+        self.assertFalse(os.path.exists(self.path))
+
+    def test_stop_aTraceFileThatIsAlreadyGoneIsNotAnError(self):
+        dumper = self._dumper()
+        dumper.join = unittest.mock.Mock()
+
+        dumper.stop()
+
+        self.assertTrue(dumper.stop_requested.is_set())
+
+    def test_init_anIntervalThatIsTooShortIsRefused(self):
+        with self.assertRaises(AssertionError):
+            TraceDumper.TraceDumper(self.path, 0.1, True)
+
+
+class testTraceModuleFunctions_py3(unittest.TestCase):
+    """trace_start() / trace_stop(): the module level on/off switch."""
+
+    def setUp(self):
+        self.addCleanup(setattr, TraceDumper, '_tracer', None)
+        TraceDumper._tracer = None
+        patch = unittest.mock.patch.object(TraceDumper, 'TraceDumper')
+        self.dumper_class = patch.start()
+        self.addCleanup(patch.stop)
+        self.dumper = self.dumper_class.return_value
+
+    def test_traceStart_startsADaemonThreadDumpingToTheFile(self):
+        TraceDumper.trace_start('trace.html', 7, False)
+
+        self.dumper_class.assert_called_once_with('trace.html', 7, False)
+        self.assertIs(self.dumper.daemon, True)
+        self.dumper.setDaemon.assert_not_called()   # deprecated spelling
+        self.dumper.start.assert_called_once_with()
+
+    def test_traceStart_defaultsToEveryFiveSecondsAndAlwaysUpdating(self):
+        TraceDumper.trace_start('trace.html')
+
+        self.dumper_class.assert_called_once_with('trace.html', 5, True)
+
+    def test_traceStart_onlyOneTraceAtATime(self):
+        self.dumper.fpath = '/work/trace.html'
+        TraceDumper.trace_start('trace.html')
+
+        with self.assertRaisesRegex(Exception, 'Already tracing to /work/trace.html'):
+            TraceDumper.trace_start('other.html')
+
+        self.assertEqual(self.dumper_class.call_count, 1)
+
+    def test_traceStop_stopsTheTraceAndAllowsANewOne(self):
+        TraceDumper.trace_start('trace.html')
+
+        TraceDumper.trace_stop()
+
+        self.dumper.stop.assert_called_once_with()
+        self.assertIsNone(TraceDumper._tracer)
+        TraceDumper.trace_start('again.html')
+        self.assertEqual(self.dumper_class.call_count, 2)
+
+    def test_traceStop_withNothingToStopIsAnError(self):
+        with self.assertRaisesRegex(Exception, 'Not tracing'):
+            TraceDumper.trace_stop()
+
+    def test_traceStop_aSecondStopIsAnError(self):
+        TraceDumper.trace_start('trace.html')
+        TraceDumper.trace_stop()
+
+        with self.assertRaisesRegex(Exception, 'Not tracing'):
+            TraceDumper.trace_stop()
 
 
 if __name__ == '__main__':
