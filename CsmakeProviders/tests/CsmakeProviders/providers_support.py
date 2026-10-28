@@ -39,6 +39,7 @@ import importlib
 import io
 import os
 import re
+import shutil
 import subprocess
 import sys
 import traceback
@@ -141,6 +142,9 @@ class FakeLog(object):
 
     def failed(self):
         self.records.append(('failed', ''))
+
+    def skipped(self):
+        self.records.append(('skipped', ''))
 
     def out(self):
         return None
@@ -307,3 +311,60 @@ class FakeHandler(object):
             if keyword.lower() == name.lower():
                 return value
         return None
+
+
+class FakeShell(FakeManager):
+    """A FakeManager that also *carries out* the few coreutils commands the
+    config classes use (mkdir -p, chmod, chown, chgrp, mv, cp, rm, touch,
+    rmdir -p) on real paths with Python's os module, with POSIX failure
+    behaviour: e.g. 'rm' of a path that does not exist fails (exit 1), as the
+    real command does.  Nothing is executed; paths should be under a temp
+    directory."""
+
+    def _fail(self, command):
+        return subprocess.CalledProcessError(1, command)
+
+    def _run(self, command):
+        import os
+        name, args = command[0], command[1:]
+        try:
+            if name == 'mkdir' and args[0] == '-p':
+                os.makedirs(args[1], exist_ok=True)
+            elif name == 'chmod':
+                os.chmod(args[1], int(args[0], 8))
+            elif name in ('chown', 'chgrp'):
+                os.stat(args[1])            # (ownership is not emulated)
+            elif name == 'mv':
+                os.rename(args[0], args[1])
+            elif name == 'cp':
+                shutil.copyfile(args[0], args[1])
+            elif name == 'rm':
+                flags = [a for a in args if a.startswith('-')]
+                for path in [a for a in args if not a.startswith('-')]:
+                    try:
+                        os.remove(path)
+                    except FileNotFoundError:
+                        if '-f' not in flags:
+                            raise
+            elif name == 'touch':
+                with open(args[0], 'a'):
+                    pass
+            elif name == 'rmdir' and args[0] == '-p':
+                os.removedirs(args[1])
+            else:
+                raise AssertionError("FakeShell cannot run %r" % (command,))
+        except (OSError, ValueError):
+            return 1
+        return 0
+
+    def shellout(self, subprocess_call, command, in_chroot=True, sudo=True,
+                 quiet_check=False, with_user_env=False):
+        outcome = FakeManager.shellout(
+            self, subprocess_call, command, in_chroot, sudo, quiet_check,
+            with_user_env)
+        status = self._run(command)
+        if subprocess_call is subprocess.call:
+            return status or outcome
+        if status:
+            raise self._fail(command)
+        return outcome

@@ -24,6 +24,7 @@ CsmakeCore is taken from sys.path, else from the sibling checkout
 production imports no longer need that, and testLegacyImports_py3.py guards
 against them regressing.)
 """
+import importlib
 import importlib.util
 import os
 import sys
@@ -49,3 +50,30 @@ def install():
     if not os.path.isdir(os.path.join(CORE_CHECKOUT, 'CsmakeCore')):
         raise unittest.SkipTest("csmake core not found")
     sys.path.insert(0, CORE_CHECKOUT)
+
+
+# Libraries a plugin module needs that may be absent (tests then skip)
+OPTIONAL_IMPORTS = ('git', 'gitdb', 'yaml', 'packaging', 'pygments',
+                    'CsmakeCore')
+
+
+def import_plugin(name):
+    """Import CsmakeModules.<name> from this repository.
+
+    Skips (rather than fails) when csmake core or a third party library the
+    module needs is not available."""
+    install()
+    try:
+        from . import providers_support
+    except ImportError:  # imported without its package
+        import providers_support
+    providers_support.ensure_pyinotify()   # the providers import it
+    if REPO not in sys.path:
+        sys.path.insert(0, REPO)
+    try:
+        return importlib.import_module('CsmakeModules.' + name)
+    except ImportError as exc:
+        if (exc.name or '').split('.')[0] in OPTIONAL_IMPORTS:
+            raise unittest.SkipTest(
+                "%s needs '%s', which is not available" % (name, exc.name))
+        raise
