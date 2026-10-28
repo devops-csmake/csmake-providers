@@ -2371,14 +2371,15 @@ class PypiProvider(CsmakeServiceProvider):
         self.serviceClass = PypiService
 
     def _customizeSocket(self, socket):
-        return ssl.wrap_socket(
-            socket,
-            #ssl_version=ssl.PROTOCOL_TLSv1_2,
-            ssl_version=ssl.PROTOCOL_SSLv23,
-            server_side=True,
-            ciphers=self.ciphers,
+        #ssl.wrap_socket() was removed in Python 3.12, so wrap with an
+        #SSLContext.  PROTOCOL_TLS_SERVER (Python 3.6+) negotiates the
+        #highest protocol both sides support, as PROTOCOL_SSLv23 did.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(
             certfile=self.certificateManager.getCertPath(),
             keyfile=self.certificateManager.getCertKeyPath() )
+        context.set_ciphers(self.ciphers)
+        return context.wrap_socket(socket, server_side=True)
 
     def _processOptions(self):
         if 'interfaces' not in self.options:

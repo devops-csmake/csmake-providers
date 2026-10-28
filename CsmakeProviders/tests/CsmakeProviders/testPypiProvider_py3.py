@@ -392,8 +392,8 @@ class testPypiProvider_py3(unittest.TestCase):
     def test_listVersions_aServerErrorIsLoggedAndNoFilesAreOffered(self):
         # (the package is known from the index listing, so it is still a
         # page - just an empty one - rather than a 404)
-        self._urlopen({PACKAGE_PAGE: urllib.error.HTTPError(
-            PACKAGE_PAGE, 500, 'Server Error', None, None),
+        self._urlopen({PACKAGE_PAGE: support.http_error(
+            PACKAGE_PAGE, 500, 'Server Error'),
             INDEX: INDEX_PAGE})
         context, _ = self._context()
         handler = support.FakeHandler()
@@ -750,22 +750,57 @@ class testPypiProvider_py3(unittest.TestCase):
         with self.assertRaises(PypiProvider.subprocess.CalledProcessError):
             self._construct(lambda: PypiProvider.PypiProvider(object(), 'tag'))
 
-    @unittest.skipIf(not hasattr(ssl, 'wrap_socket'),
-                     "pre-existing: ssl.wrap_socket was removed in Python "
-                     "3.12 so PypiProvider._customizeSocket cannot work "
-                     "there until it is ported to ssl.SSLContext")
-    def test_customizeSocket_wrapsWithTheTextCipherList(self):
+    def _tlsProvider(self):
         provider = object.__new__(PypiProvider.PypiProvider)
         provider.ciphers = 'AES128-SHA'
         provider.certificateManager = types.SimpleNamespace(
-            getCertPath=lambda: '/c.crt', getCertKeyPath=lambda: '/c.key')
-        wrap = self._patch(ssl, 'wrap_socket', return_value='wrapped')
+            getCertPath=lambda: '/etc/csmake/pypi.crt',
+            getCertKeyPath=lambda: '/etc/csmake/pypi.key')
+        return provider
 
-        result = provider._customizeSocket('sock')
+    def test_customizeSocket_wrapsTheSocketWithAServerSideSslContext(self):
+        # ssl.wrap_socket() was removed in Python 3.12; an SSLContext with
+        # PROTOCOL_TLS_SERVER exists from 3.6 on and is not deprecated
+        context_class = self._patch(PypiProvider.ssl, 'SSLContext')
+        context = context_class.return_value
+        context.wrap_socket.return_value = 'wrapped'
+
+        result = self._tlsProvider()._customizeSocket('the-socket')
 
         self.assertEqual(result, 'wrapped')
-        self.assertEqual(wrap.call_args[1]['ciphers'], 'AES128-SHA')
-        self.assertEqual(wrap.call_args[1]['certfile'], '/c.crt')
+        context_class.assert_called_once_with(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain.assert_called_once_with(
+            certfile='/etc/csmake/pypi.crt', keyfile='/etc/csmake/pypi.key')
+        context.set_ciphers.assert_called_once_with('AES128-SHA')
+        context.wrap_socket.assert_called_once_with(
+            'the-socket', server_side=True)
+
+    def test_customizeSocket_anUnusableCertificateIsAnErrorBeforeWrapping(self):
+        context = self._patch(PypiProvider.ssl, 'SSLContext').return_value
+        context.load_cert_chain.side_effect = ssl.SSLError('bad key')
+
+        with self.assertRaises(ssl.SSLError):
+            self._tlsProvider()._customizeSocket('the-socket')
+
+        context.wrap_socket.assert_not_called()
+
+    def test_customizeSocket_aMissingCertificateFileIsAnError(self):
+        context = self._patch(PypiProvider.ssl, 'SSLContext').return_value
+        context.load_cert_chain.side_effect = FileNotFoundError('pypi.crt')
+
+        with self.assertRaises(FileNotFoundError):
+            self._tlsProvider()._customizeSocket('the-socket')
+
+        context.wrap_socket.assert_not_called()
+
+    def test_customizeSocket_aCipherListNothingMatchesIsAnError(self):
+        context = self._patch(PypiProvider.ssl, 'SSLContext').return_value
+        context.set_ciphers.side_effect = ssl.SSLError('No cipher can be selected')
+
+        with self.assertRaises(ssl.SSLError):
+            self._tlsProvider()._customizeSocket('the-socket')
+
+        context.wrap_socket.assert_not_called()
 
     def _service(self, accepting):
         service = object.__new__(PypiProvider.PypiService)
