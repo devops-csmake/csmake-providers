@@ -179,11 +179,30 @@ class testHttpServiceProvider_py3(unittest.TestCase):
 
         self.assertEqual(undone, [True])
 
-    @unittest.skip("pre-existing typo: do_HEAD calls "
-                   "SimpleHTTPServer.SimleHTTPRequestHandler, so HEAD "
-                   "requests raise AttributeError (same code on Python 2)")
-    def test_doHead_restoresPrivs(self):
-        pass
+    def test_doHead_restoresPrivsAfterServingTheHead(self):
+        handler = self._handler()
+        undone = []
+        handler.undo_privs = [lambda: undone.append(True)]
+
+        with unittest.mock.patch.object(
+                http.server.SimpleHTTPRequestHandler, 'do_HEAD') as head:
+            handler.do_HEAD()
+
+        head.assert_called_once_with(handler)
+        self.assertEqual(undone, [True])
+
+    def test_doHead_restoresPrivsEvenWhenServingTheHeadFails(self):
+        handler = self._handler()
+        undone = []
+        handler.undo_privs = [lambda: undone.append(True)]
+
+        with unittest.mock.patch.object(
+                http.server.SimpleHTTPRequestHandler, 'do_HEAD',
+                side_effect=BrokenPipeError):
+            with self.assertRaises(BrokenPipeError):
+                handler.do_HEAD()
+
+        self.assertEqual(undone, [True])
 
     def test_server_bindsWhileThePortIsLockedAndUnbound(self):
         events = []

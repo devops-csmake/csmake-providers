@@ -73,7 +73,7 @@ class VirtualPathHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
     def do_HEAD(self):
         try:
-            SimpleHTTPServer.SimleHTTPRequestHandler.do_HEAD(self)
+            SimpleHTTPServer.SimpleHTTPRequestHandler.do_HEAD(self)
         finally:
             self.finish_request()
 
