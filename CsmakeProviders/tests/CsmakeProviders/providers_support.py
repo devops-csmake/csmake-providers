@@ -66,7 +66,18 @@ def ensure_pyinotify():
         pass
     stub = types.ModuleType('pyinotify')
     stub.__csmake_test_stub__ = True
-    stub.ProcessEvent = type('ProcessEvent', (object,), {})
+
+    class ProcessEvent(object):
+        """The construction contract of pyinotify.ProcessEvent: keyword
+        arguments go to my_init() (the event dispatch is not needed)."""
+
+        def __init__(self, pevent=None, **kargs):
+            self.pevent = pevent
+            self.my_init(**kargs)
+
+        def my_init(self, **kargs):
+            pass
+    stub.ProcessEvent = ProcessEvent
 
     def _unavailable(name):
         raise AttributeError(
@@ -99,13 +110,17 @@ class FakeLog(object):
         self.records = []
 
     def _record(self, level, msg, args):
-        self.records.append((level, msg % args if args else msg))
+        try:
+            text = msg % args if args else msg
+        except Exception:  # csmake's own log tolerates bad format args too
+            text = '%s %s' % (msg, args)
+        self.records.append((level, text))
 
     def debug(self, msg, *args):
         self._record('debug', msg, args)
 
     def devdebug(self, msg, *args):
-        pass
+        self._record('devdebug', msg, args)
 
     def info(self, msg, *args):
         self._record('info', msg, args)
@@ -187,14 +202,23 @@ class FakeManager(object):
     noSudo = True
     cwd = None
 
-    def __init__(self, log, results=None):
+    def __init__(self, log, results=None, daemon=None):
         self.log = log
         self.results = results or {}
         self.calls = []
+        self.daemon = daemon
+        # command name -> function(command) run when that command is
+        # "executed", e.g. to capture the content of a file about to be cp'd
+        self.hooks = {}
+
+    def getDaemon(self):
+        return self.daemon
 
     def shellout(self, subprocess_call, command, in_chroot=True, sudo=True,
                  quiet_check=False, with_user_env=False):
         self.calls.append((subprocess_call, list(command), in_chroot))
+        if command[0] in self.hooks:
+            self.hooks[command[0]](list(command))
         outcome = self.results.get(tuple(command))
         if subprocess_call is subprocess.check_output:
             return process_output(b'' if outcome is None else outcome, {})
@@ -222,6 +246,17 @@ class FakeResponse(io.BytesIO):
         return self.headers
 
 
+def http_error(url, code, message):
+    """The HTTPError urlopen raises for an HTTP error status."""
+    error = urllib.error.HTTPError(
+        url, code, message, email.message.Message(), io.BytesIO())
+    try:
+        error.close()  # nothing reads the body; avoids a ResourceWarning
+    except Exception:  # (older Pythons are fussy about closing these)
+        pass
+    return error
+
+
 class FakeUrlopen(object):
     """Stands in for urllib.request.urlopen, scripted by exact URL.
 
@@ -236,11 +271,8 @@ class FakeUrlopen(object):
         self.calls.append(url)
         route = self.routes.get(url)
         if route is None:
-            route = urllib.error.HTTPError(
-                url, 404, 'Not Found', email.message.Message(), None)
+            route = http_error(url, 404, 'Not Found')
         if isinstance(route, BaseException):
-            if isinstance(route, urllib.error.HTTPError):
-                route.close()  # nothing reads the body; avoids a ResourceWarning
             raise route
         if isinstance(route, bytes):
             route = (route, {})
