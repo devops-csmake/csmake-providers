@@ -31,7 +31,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # </copyright>
 from CsmakeProviders.SshServiceProvider import SshServiceProvider
-from Csmake.CsmakeAspect import CsmakeAspect
+from CsmakeCore.CsmakeAspect import CsmakeAspect
 
 class SshStopService(CsmakeAspect):
     """Purpose: End execution of a SshService section

@@ -31,7 +31,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # </copyright>
 from CsmakeProviders.PypiProvider import PypiProvider
-from Csmake.CsmakeModule import CsmakeModule
+from CsmakeCore.CsmakeModule import CsmakeModule
 
 class PypiPopContext(CsmakeModule):
     """Purpose: A module that will undo the application of a context

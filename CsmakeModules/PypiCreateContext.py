@@ -31,7 +31,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # </copyright>
 from CsmakeProviders.PypiProvider import PypiProvider
-from Csmake.CsmakeModule import CsmakeModule
+from CsmakeCore.CsmakeModule import CsmakeModule
 
 class PypiCreateContext(CsmakeModule):
     """Purpose: A module to create or modify the pypi context
