@@ -349,5 +349,75 @@ class testPypiConfigWriters_py3(unittest.TestCase):
         self.assertEqual(self.log.problems, [])
 
 
+class testHideFiles_py3(unittest.TestCase):
+    """HidePipFile / HideDistUtilsFile move a user's config aside while the
+    facade runs and are supposed to put it back on clean().  FakeShell carries
+    the shell commands out on temp files with POSIX behaviour (notably: 'rm'
+    of a missing file fails), which settles whether it does."""
+
+    def setUp(self):
+        self.log = support.FakeLog()
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix='csmake-hide-'))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.path = os.path.join(self.tmp, 'etc', 'pip.conf')
+        os.makedirs(os.path.dirname(self.path))
+        with open(self.path, 'w') as f:
+            f.write('theirs')
+        self.shell = support.FakeShell(self.log)
+
+    def _config(self, clazz):
+        return clazz(types.SimpleNamespace(log=self.log), self.shell,
+                     self.path, self.path, False, None)
+
+    def _read(self, path):
+        with open(path) as f:
+            return f.read()
+
+    def test_ensure_movesTheUsersFileAsideAndLeavesNothingInItsPlace(self):
+        for clazz in (PypiProvider.HidePipFile, PypiProvider.HideDistUtilsFile):
+            with self.subTest(clazz=clazz.__name__):
+                with open(self.path, 'w') as f:
+                    f.write('theirs')
+                self._config(clazz).ensure()
+
+                self.assertFalse(os.path.exists(self.path))
+                self.assertEqual(self._read(self.path + '.csmake.bkup'), 'theirs')
+                os.remove(self.path + '.csmake.bkup')
+
+    def test_clean_putsTheFileBackWhenSomethingRecreatedItInTheMeantime(self):
+        # (e.g. pip writing its own config while the facade ran)
+        config = self._config(PypiProvider.HidePipFile)
+        config.ensure()
+        with open(self.path, 'w') as f:
+            f.write('written meanwhile')
+
+        config.clean()
+
+        self.assertEqual(self._read(self.path), 'theirs')
+        self.assertFalse(os.path.exists(self.path + '.csmake.bkup'))
+
+    def test_clean_putsBackAFileThatWasReplacedByAPlaceholderOfTheSameBase(self):
+        # the generic backup path (setup=True leaves an empty placeholder)
+        config = self._config(PypiProvider.CsmakeServiceConfig)
+        config._backupAndSetup(self.path, in_chroot=False)
+
+        config.clean()
+
+        self.assertEqual(self._read(self.path), 'theirs')
+
+    @unittest.skip("pre-existing: clean() starts by running 'rm' on the "
+                   "(now missing) hidden path; that fails, the error is "
+                   "logged and the original file is never moved back from "
+                   ".csmake.bkup")
+    def test_clean_putsTheHiddenFileBack(self):
+        config = self._config(PypiProvider.HidePipFile)
+        config.ensure()
+
+        config.clean()
+
+        self.assertEqual(self._read(self.path), 'theirs')
+        self.assertEqual([], self.log.problems)
+
+
 if __name__ == '__main__':
     unittest.main()

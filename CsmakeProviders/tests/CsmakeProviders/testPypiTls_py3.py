@@ -144,6 +144,28 @@ class testPypiTlsCertificates_py3(CertificateTestCase):
         self.check_call.assert_not_called()
         self.assertEqual(len(self.log.problems), 1)
 
+    @unittest.skip("pre-existing: generate() raises for a pre-created root CA "
+                   "that has no key even when the derived certificate and key "
+                   "exist (its 'raise' is outside the check that they are "
+                   "missing), so a pre-created CA cannot be used that way")
+    def test_generate_aRootCaWithADerivedCertAndKeyNeedsNoRootKey(self):
+        certs = self._certs(existing=(ROOT_CERT, CERT, CERT_KEY))
+
+        certs.generate()
+
+        self.check_call.assert_not_called()
+
+    @unittest.skip("pre-existing: a literal certfile-key-password is taken "
+                   "from certroot-key-password (copy and paste slip), so the "
+                   "client key gets the wrong password or a None one")
+    def test_generate_aLiteralCertKeyPasswordTravelsInTheEnvironment(self):
+        self._certs(**{'certfile-key-password': 'certsecret'}).generate()
+
+        self.assertEqual(self._argv()[2][5:7],
+                         ['-passout', 'env:__CSMAKE_PASS_CERT'])
+        self.assertEqual(self._kwargs(2)['env']['__CSMAKE_PASS_CERT'],
+                         'certsecret')
+
     def test_generate_aFailingOpensslStopsTheSequence(self):
         self.check_call.side_effect = [
             None, support.called_process_error(['openssl', 'req'], 1)]
@@ -252,6 +274,19 @@ class testPypiTlsCertificates_py3(CertificateTestCase):
         self.assertEqual(certs.certbundles(), ['/b/bundle'])
         self.assertEqual(certs.certfiles(), ['/anchors/ca.pem'])
         self.assertEqual(len(self.log.messages('debug')), 1)
+
+    @unittest.skip("pre-existing: removeCertFile removes from the bundle "
+                   "list instead of the cert file list, and for an unknown "
+                   "file logs through an undefined name (NameError)")
+    def test_removeCertFile_forgetsTheFileAndToleratesAnUnknownOne(self):
+        certs = self._certs()
+        certs.addCertFile('/anchors/a.pem')
+        certs.addCertFile('/anchors/b.pem')
+
+        certs.removeCertFile('/anchors/a.pem')
+        certs.removeCertFile('/anchors/never-added.pem')
+
+        self.assertEqual(certs.certfiles(), ['/anchors/b.pem'])
 
     def test_prettyPrintDevDebug_isSilentUnlessDevOutputIsOn(self):
         certs = self._certs()
