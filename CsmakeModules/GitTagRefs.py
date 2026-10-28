@@ -127,7 +127,7 @@ class GitTagRefs(CsmakeModule):
         gitrefs = {}
         for filepath in files:
             with open(filepath) as f:
-                current = yaml.load(f)
+                current = yaml.safe_load(f)
             if 'sources' in current:
                 self._processCsversionSources(current['sources'], gitrefs)
             else:
