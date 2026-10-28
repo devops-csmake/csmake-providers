@@ -52,6 +52,108 @@ except ImportError:
 from packaging import version
 from packaging import specifiers
 
+#Versions that PEP 440 rejects (e.g., from file names such as
+#mypackage-is-v(42.4.1Thisisdog)3iohagi.tar.gz) were represented with
+#packaging's LegacyVersion, which packaging 22 removed.
+#_nonPep440Version() gives the LegacyVersion if packaging still has one and
+#otherwise a stand-in that orders the same way:
+#   * Every such version sorts before every PEP 440 version (packaging gave
+#     them an epoch of -1), as LegacyVersion did.
+#   * Among themselves they sort as setuptools' old parse_version did, which
+#     is what LegacyVersion implemented (numbers by value, then letters,
+#     "rc"/"pre"/"dev" before the final release, case ignored).
+#The results are used as dictionary keys, printed, and handed to
+#SpecifierSet.filter(); they are never ordered by this module itself.
+_LOOSE_PIECE = re.compile(r'(\d+|[a-z]+|\.|-)')
+_LOOSE_ALIASES = {'pre': 'c', 'preview': 'c', '-': 'final-', 'rc': 'c',
+                  'dev': '@'}
+
+def _looseVersionKey(text):
+    pieces = []
+    for piece in _LOOSE_PIECE.split(text.lower()):
+        piece = _LOOSE_ALIASES.get(piece, piece)
+        if not piece or piece == '.':
+            continue
+        if piece[:1] in '0123456789':
+            pieces.append(piece.zfill(8))   #so numbers compare by value
+        else:
+            pieces.append('*' + piece)
+    pieces.append('*final')                 #so pre-releases sort before it
+    parts = []
+    for piece in pieces:
+        if piece.startswith('*'):
+            if piece < '*final':
+                while parts and parts[-1] == '*final-':
+                    parts.pop()
+            while parts and parts[-1] == '00000000':
+                parts.pop()                 #1.0 == 1.0.0
+        parts.append(piece)
+    return tuple(parts)
+
+class _NonPep440Version(object):
+    """Stands in for packaging's LegacyVersion when packaging lacks it."""
+
+    def __init__(self, text):
+        self._text = text if isinstance(text, str) else str(text)
+        self._key = _looseVersionKey(self._text)
+
+    def __str__(self):
+        return self._text
+
+    def __repr__(self):
+        return "<NonPep440Version('%s')>" % self._text
+
+    def __hash__(self):
+        return hash(self._key)
+
+    #What callers of a packaging version may ask of it
+    public = property(lambda self: self._text)
+    base_version = public
+    epoch = -1
+    is_prerelease = False
+    is_postrelease = False
+    is_devrelease = False
+
+    def _compare(self, other, operation):
+        if isinstance(other, _NonPep440Version):
+            return operation(self._key, other._key)
+        if isinstance(other, version.Version):
+            return operation(0, 1)          #before every PEP 440 version
+        return NotImplemented
+
+    def __lt__(self, other):
+        return self._compare(other, lambda a, b: a < b)
+
+    def __le__(self, other):
+        return self._compare(other, lambda a, b: a <= b)
+
+    def __eq__(self, other):
+        return self._compare(other, lambda a, b: a == b)
+
+    def __ne__(self, other):
+        return self._compare(other, lambda a, b: a != b)
+
+    def __gt__(self, other):
+        return self._compare(other, lambda a, b: a > b)
+
+    def __ge__(self, other):
+        return self._compare(other, lambda a, b: a >= b)
+
+def _nonPep440Version(text):
+    legacy = getattr(version, 'LegacyVersion', None)
+    if legacy is not None:
+        return legacy(text)
+    return _NonPep440Version(text)
+
+def _pinSpecifier(found):
+    #Requirement text matching exactly one known version.  packaging 22 also
+    #removed LegacySpecifier, so a version that PEP 440 rejects cannot be
+    #given to '==' any more; '===' (arbitrary equality, a plain string
+    #comparison) is accepted for any text by every packaging.
+    if isinstance(found, version.Version):
+        return '==' + str(found)
+    return '===' + str(found)
+
 class PullLinksThread(threading.Thread):
     """Results are in the form of (index, [(href, name)...])"""
     def __init__(self, index, paths, log, onfail=None):
@@ -238,7 +340,7 @@ class PypiContext:
                 if len(self.dashparts[-1]) > 0 and self.dashparts[-1][0].isdigit():
                     #PEP-427 build tag
                     self.results['build'] = self.dashparts[-1]
-                    self.results['version'] = version.LegacyVersion(self.dashparts[-2])
+                    self.results['version'] = _nonPep440Version(self.dashparts[-2])
                     if not packageFound:
                         self.results['package'] = '-'.join(self.dashparts[:-2])
                     self.results['heuristic'] = '6c'
@@ -249,7 +351,7 @@ class PypiContext:
             if packageFound:
                 minparts = 1
             if len(self.dashparts) >= minparts:
-                self.results['version'] = version.LegacyVersion(self.dashparts[-1])
+                self.results['version'] = _nonPep440Version(self.dashparts[-1])
                 if not packageFound:
                     self.results['package'] = '-'.join(self.dashparts[:-1])
                 self.results['heuristic'] = '6d'
@@ -287,7 +389,7 @@ class PypiContext:
                     try:
                         self.results['version'] = version.Version(vstring)
                     except version.InvalidVersion:
-                        self.results['version'] = version.LegacyVersion(vstring)
+                        self.results['version'] = _nonPep440Version(vstring)
                     self.results['heuristic'] = '6b'
                     return True
             return False
@@ -331,7 +433,7 @@ class PypiContext:
             try:
                 self.results['version'] = version.Version(found[2:-1])
             except version.InvalidVersion:
-                self.results['version'] = version.LegacyVersion(found[2:-1])
+                self.results['version'] = _nonPep440Version(found[2:-1])
             if not packageFound:
                 self.results['package'] = '-'.join(self.dashparts[:vstartitem])
             self.results['heuristic'] = '6a'
@@ -1420,12 +1522,12 @@ class PypiController:
                         numPackages )
             constraintList=[]
             for package, image in self.proxyPypiImage.items():
-                versions = [str(x) for x in image[1].keys()]
-                if len(versions) == 0:
+                pins = [_pinSpecifier(x) for x in image[1].keys()]
+                if len(pins) == 0:
                     continue
-                constraintList.append("%s==%s" % (
+                constraintList.append("%s%s" % (
                     package,
-                    '|=='.join(versions)))
+                    '|'.join(pins)))
             self.log.debug("Initial Constraints: %s", str(constraintList))
             self.initialConstraints = constraintList
 
